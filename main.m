@@ -107,7 +107,7 @@ for k = 1:k_total
 [~, perm] = sort(Colors);
 A_perm = A(perm, perm);
 b_perm = b(perm);
-colorView(A_perm, perm, colors, nColors, k);
+colorView(A_perm, perm, Colors, nColors, k);
 
 setup.type    = 'nofill';
 setup.droptol = 0;  % exact ILU(0)
