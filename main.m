@@ -4,13 +4,14 @@
 %    S Change to implicitly;
 %% Testing the followings:
 %
-%   Permute matrix with multicoloring, even-odd reordering, 
+%   Permute matrix with multicoloring, 
 %   apply ILU(0) preconditioner, 
-%   the last part for implementing the Schur complement for solving Ax = b.
+%   employ even-odd reordering, 
+%   implementing the Schur complement for solving Ax = b.
 %
 %  Main args:
-%    D       : length N vector for generating Nd matrix
-%    p       : length N vector for displacement at each d
+%    D       : length n vector for generating nd lattice
+%    p       : length n vector for displacement at each d
 %    k_total : 1:k distance, i.e. A^k
 %   
 %    A       : NxN Sparse matrix (square, nonsingular)
@@ -20,8 +21,8 @@
 
 clc; clear; close all;
 D = [8 8 8 16];
-p = [0 0 0 10];
-k_total = 3;
+p = [0 0 0 0];
+k_total = 5;
 tol = 1e-6;
 
 A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
@@ -107,7 +108,7 @@ for k = 1:k_total
 [~, perm] = sort(Colors);
 A_perm = A(perm, perm);
 b_perm = b(perm);
-colorView(A_perm, perm, Colors, nColors, k);
+colorView(A_perm,Colors, nColors, k);
 
 setup.type    = 'nofill';
 setup.droptol = 0;  % exact ILU(0)
@@ -201,21 +202,19 @@ n = N;
 % M_ee=M(1:n/2,1:n/2); %
 resvec_even = cell(1, k_total);
 for k = 1:k_total
-    % [colors, nColor] = displacement_coloring_nD_lattice([8 8 8 8], k, [0 0 0 1]);
-    [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
+    [colors, nColor] = displacement_coloring_nD_lattice(D, k, p);
+    % [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     [~, perm] = sort(colors);
     A_perm = A(perm, perm);
     b_perm = b(perm);
-    colorView(A_perm, perm, colors, nColors, k);
+    colorView(A_perm, colors, nColors, k);
     
     % Preconditioner
     setup.type    = 'nofill';
     setup.droptol = 0; 
     [L, U] = ilu(A_perm, setup);
     M = L*U;
-    M = M(1:n/2, 1:n/2); 
-    % lu_inv=inv(full(l*u));
-    % lu_inv_ee=lu_inv(1:n/2,1:n/2);
+    M = M(1:n/2, 1:n/2); % M_ee
 
     ap_ee = A_perm(1:n/2,1:n/2);
     ap_oo = A_perm(n/2+1:end,n/2+1:end);
@@ -255,12 +254,12 @@ end
 xlabel('Iteration');
 ylabel('Residual Norm');
 yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('GMRES Residual Convergence (With vs. Without EO)');
+title('Schur Comp. GMRES Residual Convergence without EO');
 legend show;
 grid on;
 
 %%
-function colorView(A, order, colors, nColors, k)
+function colorView(A, colors, nColors, k)
 figure;
 N = size(A, 1);
 % Reording by Colors
@@ -272,7 +271,7 @@ rowIdxNew = newPos(rowIdx);
 colIdxNew = newPos(colIdx);
 
 
-subplot(1,2,1); spy(A); title("Orignial A");
+subplot(1,2,1); spy(A); title(sprintf("A^{%g}", k));
 subplot(1,2,2);
 scatter(colIdxNew, rowIdxNew, 15, colors(rowIdx), 'filled');
 axis equal tight;
