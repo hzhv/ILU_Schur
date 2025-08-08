@@ -20,12 +20,13 @@
 %    tol     : tolerance for iterative solves
 
 clc; clear; close all;
-D = [8 8 8 16];
+D = [4 4 4 8];
 p = [0 0 0 0];
-k_total = 5;
+k_total = 3;
 tol = 1e-6;
 
 A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
+% A = kron(A, ones(3,3));
 N = size(A,1);
 A = A + speye(N)*1e-7; % non-singular
 % A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
@@ -55,11 +56,12 @@ maxit = size(A,1);
 restart = size(A, 1);
 x0 = b;
 [x_perm, flag, relres, iter, resvec] = ...
-    gmres(A, b, restart, tol, maxit, L, U, x0);
-relres_true = norm(b - A*x)/norm(b);
+    gmres(A, b, restart, tol, maxit, [],L*U, x0);
+relres_true = norm(b - A*x_perm)/norm(b);
 
 fprintf('  The actual residual norm = %d\n', relres_true);
 fprintf('  GMRES projection relative residual %e in %d iterations.\n\n', relres, sum(iter));
+
 %% Only muticoloring without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
 iters = zeros(1, k_total);
@@ -202,7 +204,7 @@ n = N;
 % M_ee=M(1:n/2,1:n/2); %
 resvec_even = cell(1, k_total);
 for k = 1:k_total
-    [colors, nColor] = displacement_coloring_nD_lattice(D, k, p);
+    [colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     % [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     [~, perm] = sort(colors);
     A_perm = A(perm, perm);
@@ -218,6 +220,8 @@ for k = 1:k_total
 
     ap_ee = A_perm(1:n/2,1:n/2);
     ap_oo = A_perm(n/2+1:end,n/2+1:end);
+    %%%% Inverse ap_oo in advance
+    ap_oo_inv = inv(ap_oo);
     % r = rank(full(ap_oo));
     % fprintf("rank(ap_oo) = %d, size = %d\n", r, size(ap_oo,1));
     ap_eo = A_perm(1:n/2, n/2+1:end);
@@ -225,23 +229,34 @@ for k = 1:k_total
     
     bp_e = b_perm(1:n/2);
     bp_o = b_perm(n/2+1 : end);
+
+    % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
+    rhs_e = bp_e - ap_eo * (ap_oo \ bp_o);
     
     % Eliminate odd -> GMRES solve for even
-    s = ap_ee - ap_eo * (ap_oo \ ap_oe); % EXPLICITLY, we should implicitly
-    figure; clf; spy(s); title(sprintf('S_{even} for k=%d', k)); grid on; 
-    % bp_o_t = bp_o - ap_oe * (ap_ee \ bp_e);
-    bp_e_t = bp_e - ap_eo * (ap_oo \ bp_o);
- 
-    maxit = size(s,1);
-    restart = size(s, 1);
+    maxit = size(ap_ee,1);
+    restart = size(ap_ee, 1);
+
+    tic;
+    s_ee_mul = ap_ee - ap_eo * (ap_oo \ ap_oe);         % EXPLICITLY
+    [x_even, flag, relres_even, iter_even, resvec_even{k}] = ...
+        gmres(s_ee_mul, rhs_e, restart, tol, maxit, [], M);
+    t_exp = toc;
+    fprintf('  GMRES w/ exp Schur used %d sec\n', t_exp);
+
+    % figure; clf; spy(s); title(sprintf('S_{even} for k=%d', k)); grid on; 
+    tic;
+    s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo \ (ap_oe*x)); % IMPLICITLY, do the inv ap_oo in advance, inv(ap_oo) should be also diag not dense.
+    
+    % s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo_inv*(ap_oe*x)); 
     % x0 = bp_e_t;
     [x_even, flag, relres_even, iter_even, resvec_even{k}] = ...
-        gmres(s, bp_e_t, restart, tol, maxit, [], M);
-    
+        gmres(s_ee_mul, rhs_e, restart, tol, maxit, [], M);
+    t_imp = toc;
     fprintf('  When k = %d,', k)
-    fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  GMRES projection relative residual %e in %d iterations.\n\n', relres_even, sum(iter_even));
-    
+    fprintf('  Total colors = %d\n', nColors);
+    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, sum(iter_even));
+    fprintf('  GMRES w/ imp Schur used %d sec\n\n', t_imp);
     x_odd = ap_oo \ (bp_o - ap_oe * x_even);
     % Combine x_even and x_odd
 end
