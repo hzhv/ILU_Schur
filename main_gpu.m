@@ -25,34 +25,38 @@ k_total = 3;
 tol = 1e-6;
 
 A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
-% figure; spy(A);
+figure; spy(A); title("Original A");
 N = size(A,1);
 % A = A + speye(N)*1e-7; % non-singular
 %A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 rng(1);
 A = kron(A, (rand(48)));   % For denser "boxed" diag
+B_perm = ones(48,1);
+
 N_new = size(A, 1);
 A = A + speye(N_new)*1e-7; % non-singular
 
 Ag = gpuArray(A); % GPU
-% % figure; spy(Ag); title("A after Kron")
 
+% figure; spy(Ag); title("After Kron(A, rand(48))")
+%%
 % b = ones(N_new, 1);  % RHS: all-ones vector
 % bg = randn(N_new, 1);
 bg = randn(N_new, 1, "gpuArray");
 
-maxit = size(Ag,1);
-restart = size(Ag, 1);
+maxit = 200;
+% restart = size(Ag, 1);
+restart = 200;
 % x0 = b;
-
-[xg, flag, relres, iter, resvec] = ... % "Pure Iterations"
+%% "Pure Iterations"
+[xg, flag, relres, iter, resvec] = ... % 
     gmres(Ag, bg, restart, tol, maxit, [], []);
 relres_true = norm(bg - Ag*xg)/norm(bg);
 fprintf('Pure iterative results w/o preconditioner:\n');
 fprintf('  The actual residual norm = %d\n', relres_true);
 fprintf('  GMRES projection relative residual %e in %d iterations.\n\n', relres, sum(iter));
 
-%% Only Use ILU(0) Preconditioner
+%% Use ILU(0) Preconditioner Only
 fprintf('Use ilu(0) but no multi-reordering:\n');
 setup.type    = 'nofill';
 setup.droptol = 0;  
@@ -70,14 +74,14 @@ relres_true = norm(bg - Ag*x_perm_gpu)/norm(bg);
 
 fprintf('  The actual residual norm = %d\n', relres_true);
 fprintf('  GMRES projection relative residual %e in %d iterations.\n\n', relres, sum(iter));
-%% Only muticoloring without Even-Odd ordering
+%% Use muticoloring only without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
 iters = zeros(1, k_total);
 relres_true = cell(1, k_total);
 
 for k = 1:k_total
     [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
-    Colors = kron(Colors, [1; 1; 1]);
+    Colors = kron(Colors, B_perm);
     [~, perm] = sort(Colors);
     A_perm = A(perm, perm);
     A_perm_gpu = gpuArray(A_perm);  % Copy to GPU
@@ -119,7 +123,7 @@ relres_true_eo = cell(1, k_total);
 for k = 1:k_total
     % [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
-    Colors = kron(Colors, [1;1;1]);
+    Colors = kron(Colors, B_perm);
     [~, perm] = sort(Colors);
     A_perm = A(perm, perm);
     A_perm_gpu = gpuArray(A_perm);  % Copy to GPU
@@ -169,6 +173,7 @@ for k = 1:k_total
     semilogy(relres_true{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
     hold on;
 end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 xlabel('Iteration');
 ylabel('Residual Norm');
 yline(tol,'r--');
@@ -178,6 +183,7 @@ grid on;
 
 figure;
 clf;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 for k = 1:k_total
     semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
     hold on;
@@ -189,16 +195,16 @@ title('GMRES Residual Convergence (With vs. Without EO)');
 legend show;
 grid on;
 
-
 %% Partial ILU(0)(A) with Schur Complement
 fprintf('Schur Complement:\n')
+iters_sch = zeros(1, k_total);
 n = N;
 % M = l*u; 
 % M_ee=M(1:n/2,1:n/2); %
 resvec_even = cell(1, k_total);
 for k = 1:k_total 
     [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
-    colors = kron(colors, [1;1;1]);
+    colors = kron(colors, B_perm);
     [~, perm] = sort(colors);
     A_perm = A(perm, perm);
     A_perm_gpu = gpuArray(A_perm);  % Copy to GPU
@@ -257,6 +263,7 @@ for k = 1:k_total
     fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, sum(iter_even));
     fprintf('  GMRES w/ imp Schur used %d sec\n', t_imp);
     x_odd = ap_oo \ (bp_o - ap_oe * x_even_gpu);
+    iters_sch(k) = sum(iter_even);
     % Combine x_even and x_odd
 end
 
@@ -272,6 +279,14 @@ title('Schur Comp. GMRES Residual Convergence without EO');
 legend show;
 grid on;
 
+figure;
+plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
+plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);hold on;
+plot(1:k_total, iters_sch, '-s', 'LineWidth', 2);
+xlabel('k'); ylabel('GMRES Iterations');
+legend('Without EO', 'With EO','Schur Comp.','Location', 'northwest');
+title('GMRES Iterations vs. k');
+grid on;
 %%
 function colorView(A, order, colors, nColors, k)
 figure;
@@ -370,4 +385,12 @@ end
 %   the actual residual norm = 3.883715e-10
 %   GMRES projection relative residual 2.507538e-12 in 14 iterations.
 % 
-%   %%
+%   
+%% 08/12/2025 Kron(rand(48))
+
+% Pure iterative results w/o preconditioner:
+%   The actual residual norm = 9.786373e-01
+%   GMRES projection relative residual 9.786373e-01 in 1050 iterations.
+% Pure iterative results w/o preconditioner:
+%   The actual residual norm = 9.760007e-01
+%   GMRES projection relative residual 9.760007e-01 in 2100 iterations.
