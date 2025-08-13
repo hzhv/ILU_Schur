@@ -131,6 +131,8 @@ for k = 1:k_total
     [L, U] = ilu(A_perm, setup); % Matlab can't do ILU on GPU
     Lg = gpuArray(L); Ug = gpuArray(U);
     
+    maxit = size(A_perm,1);
+    restart = size(A_perm, 1);
     % x0 = b_perm;
     
     [x_perm_gpu, flag, relres, iter, resvec] = ...
@@ -227,8 +229,8 @@ for k = 1:k_total
     rhs_e = bp_e - ap_eo * (ap_oo \ bp_o);
 
     % Eliminate odd -> GMRES solve for even
-%     maxit = size(ap_ee,1);
-%     restart = size(ap_ee, 1);
+    maxit = size(ap_ee,1);
+    restart = size(ap_ee, 1);
     
     % % EXPLICITLY
     % tic;

@@ -30,13 +30,13 @@ N_new = size(A, 1);
 A = A + speye(N_new)*1e-7; % non-singular
 
 % A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
-figure; spy(A); title("A Original")
+% figure; spy(A); title("A Original")
 
 % b = ones(size(A,1), 1);  % RHS: all-ones vector
 b = randn(N_new, 1);
-
-maxit = size(A,1);
-restart = size(A, 1);
+%%
+maxit = 1000;
+restart = 200;
 % x0 = b;
 %% "Pure Iterations"
 [x, flag, relres, iter, resvec] = ... % 
@@ -113,7 +113,7 @@ Colors = kron(Colors, B_perm);
 [~, perm] = sort(Colors);
 A_perm = A(perm, perm);
 b_perm = b(perm);
-colorView(A_perm,Colors, nColors, k);
+% colorView(A_perm,Colors, nColors, k);
 
 setup.type    = 'nofill';
 setup.droptol = 0;  % exact ILU(0)
@@ -145,61 +145,7 @@ end
 % Undo permutation to original order
 % invperm(perm) = 1:length(perm);
 % x = x_perm(invperm);
-%% Vis
-figure;
-plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
-plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);
-xlabel('k'); ylabel('GMRES Iterations');
-legend('Without EO', 'With EO','Location', 'northwest');
-title('GMRES Iterations vs. k');
-grid on;
 
-figure; clf;
-for k = 1:k_total
-    semilogy(relres_true{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
-    hold on;
-end
-xlabel('Iteration');
-ylabel('Residual Norm');
-yline(tol,'r--');
-title('GMRES Residual w/o EO');
-legend show;
-grid on;
-
-figure;
-clf;
-for k = 1:k_total
-    semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
-    hold on;
-end
-xlabel('Iteration');
-ylabel('Residual Norm');
-yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('GMRES Residual Convergence (With vs. Without EO)');
-legend show;
-grid on;
-
-%% Without ILU(0) but employed eo and multicolor reordering
-% fprintf('Without ilu(0) but use multi-reordering:\n');
-% for k = 1:k_total
-% [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
-% [~, perm] = sort(Colors);
-% A_perm = A(perm, perm);
-% b_perm = b(perm);
-% % figure; spy(A_perm); title("A after Coloring")
-% 
-% maxit = size(A_perm,1);
-% restart = size(A_perm, 1);
-% x0 = b_perm;
-% 
-% [x_perm, flag, relres, iter, resvec] = ...
-%     gmres(A_perm, b_perm, restart, tol, maxit, [], [], x0);
-% relres_true = norm(b_perm - A_perm*x_perm)/norm(b_perm);
-% fprintf('  When k = %d,', k);
-% fprintf('  total colors = %d.\n', nColors);
-% fprintf('  the actual residual norm = %d\n', relres_true);
-% fprintf('  GMRES projection relative residual %e in %d iterations.\n\n', relres, sum(iter));
-% end
 
 %% Partial ILU(0)(A) with Schur Complement
 fprintf('Schur Complement:\n')
@@ -277,7 +223,7 @@ yline(tol,'r--','DisplayName', sprintf('Tol'));
 title('Schur Comp. GMRES Residual Convergence without EO');
 legend show;
 grid on;
-
+saveas(gcf, 'Schur_Res.png')
 %%
 function colorView(A, colors, nColors, k)
 figure;
