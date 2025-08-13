@@ -35,7 +35,7 @@ A = A + speye(N_new)*1e-7; % non-singular
 % b = ones(size(A,1), 1);  % RHS: all-ones vector
 b = randn(N_new, 1);
 %%
-maxit = 1000;
+maxit = 100;
 restart = 200;
 % x0 = b;
 %% "Pure Iterations"
@@ -52,8 +52,6 @@ setup.droptol = 0;  % exact ILU(0)
 [L, U] = ilu(A, setup);
 M_handle = @(x) U\(L\x);
 
-maxit = size(A,1);
-restart = size(A, 1);
 x0 = b;
 [x_perm, flag, relres, iter, resvec] = ...
     gmres(A, b, restart, tol, maxit, [], M_handle, x0);
@@ -80,8 +78,6 @@ setup.droptol = 0;  % exact ILU(0)
 M_handle = @(x) U\(L\x);
 % M1 = eye(N);
 
-maxit = size(A_perm,1);
-restart = size(A_perm, 1);
 % x0 = b_perm;
 
 [x_perm, flag, relres, iter, resvec] = ...
@@ -120,8 +116,6 @@ setup.droptol = 0;  % exact ILU(0)
 [L, U] = ilu(A_perm, setup);
 M_handle = @(x) U\(L\x);
 
-maxit = size(A_perm,1);
-restart = size(A_perm, 1);
 % x0 = zeros(size(b_perm, 1),1);
 % x0 = b_perm;
 
