@@ -7,6 +7,7 @@
 %   employ even-odd reordering, 
 %   implementing the Schur complement for solving Ax = b.
 %
+%% 
 %  Main args:
 %    D       : length n vector for generating nd lattice
 %    p       : length n vector for displacement at each d
@@ -35,8 +36,8 @@ A = A + speye(N_new)*1e-7; % non-singular
 % b = ones(size(A,1), 1);  % RHS: all-ones vector
 b = randn(N_new, 1);
 %%
-maxit = 100;
-restart = 200;
+maxit = 1000;
+restart = 1000;
 % x0 = b;
 %% "Pure Iterations"
 [x, flag, relres, iter, resvec] = ... % 
@@ -142,14 +143,14 @@ end
 
 
 %% Partial ILU(0)(A) with Schur Complement
-fprintf('Schur Complement:\n')
+fprintf('Schur Complement CPU ver:\n')
 n = N_new;
 % M = l*u; 
 % M_ee=M(1:n/2,1:n/2); %
 resvec_even = cell(1, k_total);
 for k = 1:k_total
-    [colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
-    % [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
+    % [colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
+    [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     colors = kron(colors, B_perm);
     [~, perm] = sort(colors);
     A_perm = A(perm, perm);
@@ -166,7 +167,7 @@ for k = 1:k_total
     ap_ee = A_perm(1:n/2,1:n/2);
     ap_oo = A_perm(n/2+1:end,n/2+1:end);
     %%%% Inverse ap_oo in advance
-    ap_oo_inv = inv(ap_oo);
+    % ap_oo_inv = inv(ap_oo);
     % r = rank(full(ap_oo));
     % fprintf("rank(ap_oo) = %d, size = %d\n", r, size(ap_oo,1));
     ap_eo = A_perm(1:n/2, n/2+1:end);
@@ -179,21 +180,20 @@ for k = 1:k_total
     rhs_e = bp_e - ap_eo * (ap_oo \ bp_o);
     
     % Eliminate odd -> GMRES solve for even
-    maxit = size(ap_ee,1);
-    restart = size(ap_ee, 1);
 
-    tic;
-    s_ee_mul = ap_ee - ap_eo * (ap_oo \ ap_oe);         % EXPLICITLY
-    [x_even, flag, relres_even, iter_even, resvec_even{k}] = ...
-        gmres(s_ee_mul, rhs_e, restart, tol, maxit, [], M);
-    t_exp = toc;
-    fprintf('  GMRES w/ exp Schur used %d sec\n', t_exp);
+    
+    %EXPLICITLY
+    % tic;
+    % s_ee_mul = ap_ee - ap_eo * (ap_oo \ ap_oe);         
+    % [x_even, flag, relres_even, iter_even, resvec_even{k}] = ...
+    %     gmres(s_ee_mul, rhs_e, restart, tol, maxit, [], M);
+    % t_exp = toc;
+    % fprintf('  GMRES w/ exp Schur used %d sec\n', t_exp);
 
     % figure; clf; spy(s); title(sprintf('S_{even} for k=%d', k)); grid on; 
     tic;
     s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo \ (ap_oe*x)); % IMPLICITLY, do the inv ap_oo in advance, inv(ap_oo) should be also diag not dense.
-    
-    % s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo_inv*(ap_oe*x)); 
+   
     % x0 = bp_e_t;
     [x_even, flag, relres_even, iter_even, resvec_even{k}] = ...
         gmres(s_ee_mul, rhs_e, restart, tol, maxit, [], M);
