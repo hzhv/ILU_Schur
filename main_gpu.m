@@ -30,8 +30,8 @@ N = size(A,1);
 % A = A + speye(N)*1e-7; % non-singular
 %A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 rng(1);
-A = kron(A, (rand(48)));   % For denser "boxed" diag
-B_perm = ones(48,1);
+A = kron(A, (rand(1)));   % For denser "boxed" diag
+B_perm = ones(1,1);
 
 N_new = size(A, 1);
 A = A + speye(N_new)*1e-7; % non-singular
@@ -42,7 +42,7 @@ Ag = gpuArray(A); % GPU
 b = ones(N_new, 1);  % RHS: all-ones vector
 bg = randn(N_new, 1);
 % bg = randn(N_new, 1, "gpuArray");
-%%
+% %
 maxit = 1000;
 restart = 100;
 % x0 = b;
@@ -211,9 +211,10 @@ for k = 1:k_total
     [l_cpu, u_cpu, p_oo, q_oo] = lu(ap_oo);
     solve_ap_oo = @(y) q_oo*(u_cpu \ (l_cpu \ (p_oo*y))); % on cpu
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %  Sparse MLDIVIDE only supports sparse square matrices
-    %  divided by full column vectors.
+    %  Sparse MLDIVIDE only supports sparse square matrices      %
+    %  divided by full column vectors.                           %
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % === Schur Complement === %
     s_ee_gpu = @(xg)... 
        ap_ee*xg - ap_eo * gpuArray( solve_ap_oo(gather(ap_oe*xg)) ); % IMPLICITLY, do the inv ap_oo in advance, inv(ap_oo) should be also diag not dense.
     
@@ -224,26 +225,25 @@ for k = 1:k_total
     bp_o = b_perm(n/2+1 : end);
     rhs_e_gpu = bp_e_gpu - ap_eo * gpuArray(solve_ap_oo(bp_o));
     % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
-
-    % maxit = size(ap_ee,1);
-    % restart = size(ap_ee, 1);
     
-    % Preconditioned Handle (Left Preconditioning)
+    % === Preconditioned Handle (Left Preconditioning) === %
     setup.type    = 'nofill';
     setup.droptol = 0;  
-    [L, U] = ilu(A_perm, setup);
-    M = L*U; 
-    M = M(1:n/2, 1:n/2); % "Cut" on CPU
-    Mg = gpuArray(M);
+    [L, U] = ilu(A_perm, setup);       % on CPU
+    M = L*U; M_ee = M(1:n/2, 1:n/2);   % "Cut" on CPU
+    M_ee_g = full(gpuArray(M_ee));
+    [LM_ee_g, UM_ee_g] = lu(M_ee_g); % on GPU, no zero pivot I guess?
     % AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt
-    M_handle = @(xg) Mg\xg;
-
+    M_handle = @(xg) UM_ee_g\(LM_ee_g\xg);
+    
     tic;
+    M_handle_old = @(xg) M_ee_g\xg;
     % s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo_inv*(ap_oe*x)); 
     % x0 = bp_e_t;
     [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
         gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle); 
     t_imp = toc;
+
     x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
     iters_sch(k) = sum(iter_even);
     
