@@ -18,7 +18,7 @@
 %    b       : Right-hand side vector
 %    tol     : tolerance for iterative solves
 
-clc; clear; close all;
+clc; clear; close all; reset(gpuDevice);
 D = [8 8 8 16];
 p = [0 0 0 0];
 k_total = 3;
@@ -29,9 +29,9 @@ A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
 N = size(A,1);
 % A = A + speye(N)*1e-7; % non-singular
 %A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
-rng(1);
-A = kron(A, (rand(1)));   % For denser "boxed" diag
-B_perm = ones(1,1);
+rng(1); parallel.gpu.rng(1, 'Philox');
+A = kron(A, (rand(48)));   % For denser "boxed" diag
+B_perm = ones(48,1);
 
 N_new = size(A, 1);
 A = A + speye(N_new)*1e-7; % non-singular
@@ -44,7 +44,7 @@ bg = randn(N_new, 1);
 % bg = randn(N_new, 1, "gpuArray");
 % %
 maxit = 1000;
-restart = 100;
+restart = 80;
 % x0 = b;
 %% "Pure Iterations"
 [xg, flag, relres, iter, resvec] = ... % 
@@ -208,8 +208,10 @@ for k = 1:k_total
     ap_oe = A_perm(n/2+1:end, 1:n/2);    ap_oe = gpuArray(ap_oe);
     
     ap_oo = A_perm(n/2+1:end, n/2+1:end);
-    [l_cpu, u_cpu, p_oo, q_oo] = lu(ap_oo);
-    solve_ap_oo = @(y) q_oo*(u_cpu \ (l_cpu \ (p_oo*y))); % on cpu
+    q_oo = colamd(ap_oo);
+    ap_oo = ap_oo(:, q_oo);
+    [l_cpu, u_cpu, p_oo] = lu(ap_oo, 'vector');
+    solve_ap_oo = @(y) putback( u_cpu \ (l_cpu \ y(p_oo)), q_oo, size(y,1)); % on cpu
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %  Sparse MLDIVIDE only supports sparse square matrices      %
     %  divided by full column vectors.                           %
@@ -231,13 +233,28 @@ for k = 1:k_total
     setup.droptol = 0;  
     [L, U] = ilu(A_perm, setup);       % on CPU
     M = L*U; M_ee = M(1:n/2, 1:n/2);   % "Cut" on CPU
-    M_ee_g = full(gpuArray(M_ee));
-    [LM_ee_g, UM_ee_g] = lu(M_ee_g); % on GPU, no zero pivot I guess?
+    q_M = colamd(M_ee);
+    M_ee = M_ee(:, q_M);
+    % M_ee_g = full(gpuArray(M_ee));   % boom
+    [LM_ee, UM_ee, p_M] = lu(M_ee, 'vector'); % no zero pivot I guess?
     % AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt
-    M_handle = @(xg) UM_ee_g\(LM_ee_g\xg);
     
+    M_handle = @(xg) gpuArray(putback( UM_ee\(LM_ee\gather(xg(p_M))), q_M, n/2 ));
+   
+    xg = randn(n/2,1,'gpuArray');
+    t1 = gputimeit(@() ap_ee*xg);
+    t2 = gputimeit(@() ap_oe*xg);
+    t3 = timeit(@() solve_ap_oo(randn(n/2,1)));          
+    t4 = gputimeit(@() s_ee_gpu(xg));
+    t5 = gputimeit(@() M_handle(xg));
+    
+    fprintf(['  SpMV ee: %.3f ms | SpMV oe: %.3f ms | CPU solve_oo: %.3f ms |' ...
+        ' S*x: %.3f ms | M*x: %.3f ms\n\n'],...
+            t1*1e3, t2*1e3, t3*1e3, t4*1e3, t5*1e3);
+
+    % M_handle_old = @(xg) gpuArray(M_ee)\xg;
+    fprintf('  GMRES Start...\n');
     tic;
-    M_handle_old = @(xg) M_ee_g\xg;
     % s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo_inv*(ap_oe*x)); 
     % x0 = bp_e_t;
     [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
@@ -254,7 +271,7 @@ for k = 1:k_total
      
     % Combine x_even and x_odd
 end
-
+%%
 figure; clf;
 for k = 1:k_total
     semilogy(resvec_even{k}, '-', 'LineWidth', 1.5, 'DisplayName', sprintf('w/ EO, k = %d', k));
@@ -301,3 +318,12 @@ xlabel('Col Index after Reordering');
 ylabel('Row Index after Reordering');
 grid on;
 end
+
+%%
+function z = putback(s, q, n)
+    z = zeros(n,1,'like',s); 
+    z(q)=s;
+end
+
+%%
+SpMV ee: 0.125 ms | SpMV oe: 0.733 ms | CPU solve_oo: 29.703 ms | S*x: 29.138 ms | M*x: 168.344 ms
