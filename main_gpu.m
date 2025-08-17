@@ -1,7 +1,8 @@
 % 08/01/2025
 % Problems:
 %  Preconditioners of GPU_GMRES in the Schur Complement section
-%  
+%  1. resid > 1e-2
+%  2. try Bicgstab if GMRES failed
 %% Testing the followings:
 %
 %   Permute matrix with multicoloring, even-odd reordering, 
@@ -19,32 +20,30 @@
 %    tol     : tolerance for iterative solves
 
 clc; clear; close all; reset(gpuDevice);
-D = [8 8 8 16];
-p = [0 0 0 0];
-k_total = 3;
-tol = 1e-6;
-
-A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
-% figure; spy(A); title("Original A");
-N = size(A,1);
-% A = A + speye(N)*1e-7; % non-singular
-%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 rng(1); parallel.gpu.rng(1, 'Philox');
-A = kron(A, (rand(48)));   % For denser "boxed" diag
-B_perm = ones(48,1);
 
+A = load('A.mat').A; 
+D = [4 4 4 8];    % from read_coarse.m
+bs = 64;          % block size, the "block" diagonal
+B_perm = ones(bs,1);
 N_new = size(A, 1);
-A = A + speye(N_new)*1e-7; % non-singular
-
-Ag = gpuArray(A); % GPU
-% figure; spy(Ag); title("After Kron(A, rand(48))")
-
-b = ones(N_new, 1);  % RHS: all-ones vector
-bg = randn(N_new, 1);
+Ag = gpuArray(A);
+% A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
+% N = size(A,1);
+% A = A + speye(N)*1e-7; % non-singular
+%%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
+% A = kron(A, (rand(48)));   % For denser "boxed" diag
+figure; spy(A); title("Original A");
+% === RHS ===
+b = (1:N_new)';  
+bg = gpuArray(b);
 % bg = randn(N_new, 1, "gpuArray");
-% %
+% === Hyper Param ===
 maxit = 1000;
-restart = 80;
+restart = 8;
+p=[0 0 0 0];
+k_total=3;
+tol= 1e-6;
 % x0 = b;
 %% "Pure Iterations"
 [xg, flag, relres, iter, resvec] = ... % 
