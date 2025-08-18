@@ -1,32 +1,37 @@
 clc; clear; close all; reset(gpuDevice);
-D = [8 8 8 16];
-p = [0 0 0 0];
-k_total = 3;
-tol = 1e-6;
-
-A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
-% figure; spy(A); title("Original A");
-N = size(A,1);
-% A = A + speye(N)*1e-7; % non-singular
-%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 rng(1); parallel.gpu.rng(1, 'Philox');
-A = kron(A, (rand(1)));   % For denser "boxed" diag
-B_perm = ones(1,1);
 
+A = load('A.mat').A; 
+D = [4 4 4 8];    % from read_coarse.m
+bs = 64;          % block size, the "block" diagonal
+B_perm = ones(bs,1);
 N_new = size(A, 1);
-A = A + speye(N_new)*1e-7; % non-singular
-
-Ag = gpuArray(A); % GPU
-% figure; spy(Ag); title("After Kron(A, rand(48))")
-
-b = ones(N_new, 1);  % RHS: all-ones vector
-bg = randn(N_new, 1);
+Ag = gpuArray(A);
+% A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
+% N = size(A,1);
+% A = A + speye(N)*1e-7; % non-singular
+%%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
+% A = kron(A, (rand(48)));   % For denser "boxed" diag
+% figure; spy(A); title("Original A");
+% === RHS ===
+b = (1:N_new)';  
+bg = gpuArray(b);
 % bg = randn(N_new, 1, "gpuArray");
-
-% === For GMRES === %
+% === Hyper Param ===
 maxit = 1000;
-restart = 100;
-
+restart = 8;
+p=[0 0 0 0];
+k_total=3;
+tol= 1e-6;
+% x0 = b;
+%% "Pure Iterations"
+[xg, flag, relres, iter, resvec] = ... % 
+    gmres(Ag, bg, restart, tol, maxit, [], []);
+relres_true = norm(bg - Ag*xg)/norm(bg);
+fprintf('Pure iterative results w/o preconditioner:\n');
+fprintf('  The actual residual norm = %d\n', relres_true);
+fprintf('  GMRES projection relative residual %e in %d iterations.\n\n', relres, sum(iter));
+%%
 fprintf('Schur Complement GPU ver:\n')
 iters_sch = zeros(1, k_total);
 n = N_new;
@@ -70,12 +75,12 @@ for k = 1:k_total
     setup.droptol = 0;  
     [L, U] = ilu(A_perm, setup);       % on CPU
     M = L*U; M_ee = M(1:n/2, 1:n/2);   % "Cut" on CPU
-    [LM_ee, UM_ee] = lu(M_ee); % no zero pivot I guess?
+    M_ee_g = gpuArray(M_ee);
+    % [LM_ee, UM_ee] = lu(M_ee); % no zero pivot I guess?
     % AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt
-    LM_ee_g = gpuArray(LM_ee); UM_ee_g = gpuArray(UM_ee);
-    M_handle = @(xg) UM_ee_g\(LM_ee_g\xg);
-    
-    M_handle_old = @(xg) M_ee_g\xg;
+    % LM_ee_g = gpuArray(LM_ee); UM_ee_g = gpuArray(UM_ee);
+    % M_handle = @(xg) UM_ee_g\(LM_ee_g\xg);
+    M_handle_ = @(xg) M_ee_g\xg;
     tic;
     % s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo_inv*(ap_oe*x)); 
     % x0 = bp_e_t;
