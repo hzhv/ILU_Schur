@@ -33,11 +33,12 @@ Ag = gpuArray(A);
 % A = A + speye(N)*1e-7; % non-singular
 %%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 % A = kron(A, (rand(48)));   % For denser "boxed" diag
-figure; spy(A); title("Original A");
-% ===== RHS =====
-b = (1:N_new)';  
+% figure; spy(A); title("Original A");
+% ======= RHS ========
+b = load('rhs.mat').b;
 bg = gpuArray(b);
 % bg = randn(N_new, 1, "gpuArray");
+
 % === Hyper Params ===
 maxit = 1000;
 restart = 8;
@@ -52,8 +53,9 @@ fprintf('Pure iterative results w/o preconditioner:\n');
     gmres(Ag, bg, restart, tol, maxit, [], []);
 relres_true = norm(bg - Ag*xg)/norm(bg);
 tp = toc;
+total_iter = (iter(1)-1)*restart + iter(2);
 fprintf('  The actual residual norm = %d\n', relres_true);
-fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, sum(iter));
+fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
 fprintf('  GMRES cost %d sec\n\n', tp);
 %% Use ILU(0) Preconditioner Only
 fprintf('Use ilu(0) but no multi-reordering:\n');
@@ -69,8 +71,9 @@ tic;
     gmres(Ag, bg, restart, tol, maxit, [], M_handle); % Handle
 relres_true = norm(bg - Ag*x_perm_gpu)/norm(bg);
 t_ilu = toc;
+total_iter = (iter(1)-1)*restart + iter(2);
 fprintf('  The actual residual norm = %d\n', relres_true);
-fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, sum(iter));
+fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
 fprintf('  GMRES cost %d sec\n\n', t_ilu);
 %% Use muticoloring only without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
@@ -97,18 +100,19 @@ for k = 1:k_total
     [x_perm_gpu, flag, relres, iter, resvec] = ...
         gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle);
     t_noEO = toc;
+    total_iter = (iter(1)-1)*restart + iter(2);
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
     
     if flag == 0
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  the actual residual norm = %d\n', relres_true_);
-        fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, sum(iter));
+        fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
         fprintf('  GMRES cost %d sec\n\n', t_noEO);
     else
         fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
-    iters(k) = sum(iter);
+    iters(k) = total_iter;
     relres_true{k} = resvec/norm( U\b_perm_gpu );
 end
 %% Multi-reordering w/ Even-Odd Reordering
@@ -136,61 +140,27 @@ for k = 1:k_total
     [x_perm_gpu, flag, relres, iter, resvec] = ...
         gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, Lg, Ug); % M1=Lg? M2=Ug?
     t_eo = toc;
+    total_iter = (iter(1)-1)*restart + iter(2);
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
     
     if flag == 0
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  the actual residual norm = %d\n', relres_true_);
-        fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, sum(iter));
+        fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
         fprintf('  GMRES cost %d sec\n\n', t_eo);   
     else
         fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
-    iters_eo(k) = sum(iter);
+    iters_eo(k) = total_iter;
     relres_true_eo{k} = resvec/norm( U\b_perm_gpu );
 end
 % Undo permutation to original order
 % invperm(perm) = 1:length(perm);
 % x = x_perm(invperm);
-%% Vis
-figure;
-plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
-plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);
-xlabel('k'); ylabel('GMRES Iterations');
-legend('Without EO', 'With EO','Location', 'northwest');
-title('GMRES Iterations vs. k');
-grid on;
-
-figure; clf;
-for k = 1:k_total
-    semilogy(relres_true{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
-    hold on;
-end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% xlabel('Iteration');
-% ylabel('Residual Norm');
-% yline(tol,'r--');
-% title('GMRES Residual w/o EO');
-% legend show;
-% grid on;
-% 
-% figure;
-% clf;
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-for k = 1:k_total
-    semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
-    hold on;
-end
-xlabel('Iteration');
-ylabel('Residual Norm');
-yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('GMRES Residual Convergence (With vs. Without EO)');
-legend show;
-grid on;
 
 %% Partial ILU(0)(A) with Schur Complement
-fprintf('Schur Complement GPU ver:\n')
+fprintf('Schur Complement on GPU:\n')
 iters_sch = zeros(1, k_total);
 n = N_new;
 
@@ -276,18 +246,53 @@ for k = 1:k_total
     [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
         gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle); 
     t_imp = toc;
-
+    total_iter = (iter_even(1)-1)*restart + iter_even(2);
     x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
-    iters_sch(k) = sum(iter_even);
+    iters_sch(k) = total_iter;
     
     fprintf('  When k = %d,', k)
     fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, sum(iter_even));
+    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, total_iter);
     fprintf('  GMRES w/ imp Schur cost %d sec\n\n', t_imp);
      
     % Combine x_even and x_odd
 end
-%%
+%% Plot w/ EO versus w/o EO
+figure;
+plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
+plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);
+xlabel('k'); ylabel('GMRES Iterations');
+legend('Without EO', 'With EO','Location', 'northwest');
+title('GMRES Iterations vs. k');
+grid on;
+
+figure; clf;
+for k = 1:k_total
+    semilogy(relres_true{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
+    hold on;
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+xlabel('Iteration');
+ylabel('Residual Norm');
+yline(tol,'r--');
+title('GMRES Residual w/o EO');
+legend show;
+grid on;
+
+figure;
+clf;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+for k = 1:k_total
+    semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
+    hold on;
+end
+xlabel('Iteration');
+ylabel('Residual Norm');
+yline(tol,'r--','DisplayName', sprintf('Tol'));
+title('GMRES Residual Convergence');
+legend show;
+grid on;
+%% Plot Schur Convergence
 figure; clf;
 for k = 1:k_total
     semilogy(resvec_even{k}, '-', 'LineWidth', 1.5, 'DisplayName', sprintf('w/ EO, k = %d', k));
