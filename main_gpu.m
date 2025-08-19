@@ -1,8 +1,8 @@
 % 08/01/2025
 % Problems:
 %  Preconditioners of GPU_GMRES in the Schur Complement section
-%  1. resid > 1e-2
-%  2. try Bicgstab if GMRES failed
+%  1. try Bicgstab if GMRES failed
+%  2. try [8 8 8 16], bs = 48; RHS=[1:N]; p = [ 0 0 0 2], all 0, all 1, [1 -1 1 -1]
 %% Testing the followings on GPU:
 %
 %   Permute matrix with multicoloring, even-odd reordering, 
@@ -19,32 +19,38 @@
 %    b       : Right-hand side vector
 %    tol     : tolerance for iterative solves
 
-clc; clear; close all; reset(gpuDevice);
+clc; clear; reset(gpuDevice);
+% close all;
 rng(1); parallel.gpu.rng(1, 'Philox');
-
-A = load('A.mat').A; 
-D = [4 4 4 8];    % from read_coarse.m
-bs = 64;          % block size of each "block" in diagonal
-B_perm = ones(bs,1);
-N_new = size(A, 1);
-Ag = gpuArray(A);
-% A = lap_kD_periodic(D,1); % eigen vector all the same % this on GPU
-% N = size(A,1);
-% A = A + speye(N)*1e-7; % non-singular
-%%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
-% A = kron(A, (rand(48)));   % For denser "boxed" diag
-% figure; spy(A); title("Original A");
-% ======= RHS ========
-b = load('rhs.mat').b;
-bg = gpuArray(b);
-% bg = randn(N_new, 1, "gpuArray");
 
 % === Hyper Params ===
 maxit = 1000;
 restart = 8;
 p=[0 0 0 0];
 k_total=3;
-tol= 1e-6;
+tol= 1e-2; % coarse operator
+bs = 48;
+
+% === Sparse System ===
+% A = load('A.mat').A; 
+D = [8 8 8 16];
+A = lap_kD_periodic(D,1);   % eigen vector all the same % this on GPU
+A = kron(A, (rand(bs)));    % For denser "boxed" diag
+N_new = size(A, 1);
+A = A + speye(N_new)*1e-2;  % make it non-singular
+Ag = gpuArray(A);
+% bs = 64;                  % block size of each "block" in diagonal
+B_perm = ones(64,1);        % for Kron(A, B)
+
+%%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
+% figure; spy(A); title("Original A");
+
+% ======= RHS ========
+% b = load('rhs.mat').b;
+b = (1:N_new)';
+bg = gpuArray(b);
+% bg = randn(N_new, 1, "gpuArray");
+
 % x0 = b;
 %% "Pure Iterations"
 tic;
@@ -53,9 +59,9 @@ fprintf('Pure iterative results w/o preconditioner:\n');
     gmres(Ag, bg, restart, tol, maxit, [], []);
 relres_true = norm(bg - Ag*xg)/norm(bg);
 tp = toc;
-total_iter = (iter(1)-1)*restart + iter(2);
+total_iter_pure = (iter(1)-1)*restart + iter(2);
 fprintf('  The actual residual norm = %d\n', relres_true);
-fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
+fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_pure);
 fprintf('  GMRES cost %d sec\n\n', tp);
 %% Use ILU(0) Preconditioner Only
 fprintf('Use ilu(0) but no multi-reordering:\n');
@@ -71,16 +77,16 @@ tic;
     gmres(Ag, bg, restart, tol, maxit, [], M_handle); % Handle
 relres_true = norm(bg - Ag*x_perm_gpu)/norm(bg);
 t_ilu = toc;
-total_iter = (iter(1)-1)*restart + iter(2);
+total_iter_ilu0 = (iter(1)-1)*restart + iter(2);
 fprintf('  The actual residual norm = %d\n', relres_true);
-fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
+fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_ilu0);
 fprintf('  GMRES cost %d sec\n\n', t_ilu);
 %% Use muticoloring only without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
 iters = zeros(1, k_total);
 relres_true = cell(1, k_total);
-
-for k = 1:k_total
+nColors_noEO = zeros(1, k_total);
+for k = 1:2:k_total
     [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     Colors = kron(Colors, B_perm);
     [~, perm] = sort(Colors);
@@ -113,14 +119,15 @@ for k = 1:k_total
         fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
     iters(k) = total_iter;
+    nColors_noEO(k) = nColors;
     relres_true{k} = resvec/norm( U\b_perm_gpu );
 end
 %% Multi-reordering w/ Even-Odd Reordering
 fprintf('Even-Odd reordering then multi-coloring:\n');
 iters_eo = zeros(1, k_total);
 relres_true_eo = cell(1, k_total);
-
-for k = 1:k_total
+nColors_EO = zeros(1, k_total);
+for k = 1:2:k_total
     % [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     Colors = kron(Colors, B_perm);
@@ -154,6 +161,7 @@ for k = 1:k_total
     end
     iters_eo(k) = total_iter;
     relres_true_eo{k} = resvec/norm( U\b_perm_gpu );
+    nColors_EO(k) = nColors;
 end
 % Undo permutation to original order
 % invperm(perm) = 1:length(perm);
@@ -164,9 +172,9 @@ fprintf('Schur Complement on GPU:\n')
 iters_sch = zeros(1, k_total);
 n = N_new;
 
-% M_ee=M(1:n/2,1:n/2); %
 resvec_even = cell(1, k_total);
-for k = 1:k_total 
+nColors_Schur = zeros(1, k_total);
+for k = 1:2:k_total 
     [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     colors = kron(colors, B_perm);
     [~, perm] = sort(colors);
@@ -181,19 +189,20 @@ for k = 1:k_total
     ap_oo = A_perm(n/2+1:end, n/2+1:end); ap_oo = gpuArray(ap_oo);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Build 64x64xnb on CPU
-    nb=size(ap_oo,1)/bs;
-    AooPages = zeros(bs,bs,nb,'double');
-    for b = 1:nb 
-        idx = (b-1)*bs+1 : b*bs;                           % On CPU
-        AooPages(:,:,b) = full(A_perm(n/2+idx, n/2+idx));  % dense small blocks
-    end
-    AooPages_g = gpuArray(AooPages);                       % cp2gpu
-    
-    % 2) solve_oo_gpu(y) = inv(A_oo) y
-    solve_oo_gpu = @(yg) ...
-        reshape(pagefun(@mldivide, AooPages_g, reshape(yg, bs,1,nb)), ...
-        [], 1);
-    % solve_oo_gpu = @(xg) ap_oo\xg; % normal
+    % nb=size(ap_oo,1)/bs;
+    % AooPages = zeros(bs,bs,nb,'double');
+    % for b = 1:nb 
+    %     idx = (b-1)*bs+1 : b*bs;                           % On CPU
+    %     AooPages(:,:,b) = full(A_perm(n/2+idx, n/2+idx));  % dense small blocks
+    % end
+    % AooPages_g = gpuArray(AooPages);                       % cp2gpu
+    % 
+    % % solve_oo_gpu(y) = inv(A_oo) y
+    % solve_oo_gpu = @(yg) ...
+    %     reshape(pagefun(@mldivide, AooPages_g, reshape(yg, bs,1,nb)), ...
+    %     [], 1);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    solve_oo_gpu = @(xg) ap_oo\xg; % normal
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %  Sparse MLDIVIDE only supports sparse square matrices      %
     %  divided by full column vectors.                           %
@@ -249,7 +258,7 @@ for k = 1:k_total
     total_iter = (iter_even(1)-1)*restart + iter_even(2);
     x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
     iters_sch(k) = total_iter;
-    
+    nColors_Schur(k) = nColors;
     fprintf('  When k = %d,', k)
     fprintf('  Total colors = %d.\n', nColors);
     fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, total_iter);
@@ -267,7 +276,7 @@ title('GMRES Iterations vs. k');
 grid on;
 
 figure; clf;
-for k = 1:k_total
+for k = 1:2:k_total
     semilogy(relres_true{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
     hold on;
 end
@@ -282,7 +291,7 @@ grid on;
 figure;
 clf;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-for k = 1:k_total
+for k = 1:2:k_total
     semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
     hold on;
 end
@@ -294,7 +303,7 @@ legend show;
 grid on;
 %% Plot Schur Convergence
 figure; clf;
-for k = 1:k_total
+for k = 1:2:k_total
     semilogy(resvec_even{k}, '-', 'LineWidth', 1.5, 'DisplayName', sprintf('w/ EO, k = %d', k));
     hold on;
 end
@@ -305,15 +314,30 @@ title('Schur Comp. GMRES Residual Convergence without EO');
 legend show;
 grid on;
 
-figure;
-plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
-plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);hold on;
-plot(1:k_total, iters_sch, '-s', 'LineWidth', 2);
-xlabel('k'); ylabel('GMRES Iterations');
-legend('Without EO', 'With EO','Schur Comp.','Location', 'northwest');
+figure; subplot(1,2,1);
+X = 1:2:k_total;
+Y = [iters(:), iters_eo(:), iters_sch(:)];
+total_colors = [nColors_noEO(:), nColors_EO(:), nColors_EO(:)];
+bar(X, Y, 'grouped'); hold on;
+
+yline(total_iter_pure, '--r', 'Pure GMRES', 'LineWidth', 2);
+yline(total_iter_ilu0, '--b', 'ILU(0) only', 'LineWidth', 2);
+
+xlabel('k');
+ylabel('GMRES Iterations');
+legend('Without EO','With EO','Schur Comp.','Pure GMRES','ILU(0) only','Location','northwest');
 title('GMRES Iterations vs. k');
 grid on;
 
+subplot(1,2,2);
+bar(X, total_colors, 'grouped');
+xlabel('k');
+ylabel('Number of Colors');
+legend('Without EO', 'With EO', 'Schur Comp.', 'Location', 'northwest');
+
+p_str = strtrim(sprintf('%g ', p));
+title(sprintf('Number of Colors vs. k,  Disp = [%s]', p_str));
+grid on;
 %%
 function colorView(A, order, colors, nColors, k)
 figure;
@@ -340,121 +364,9 @@ ylabel('Row Index after Reordering');
 grid on;
 end
 
-%% LOGs
-% Old M Handle w/o ap_oo opt:
-Schur Complement GPU ver:
-  When k = 1,  Total colors = 2.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 2.814501e+01 sec
-
-  When k = 2,  Total colors = 16.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 2.819161e+01 sec
-
-  When k = 3,  Total colors = 16.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 2.860450e+01 sec
-
-% Old M Handle w/ ap_oo opt:
-Schur Complement GPU ver:
-  When k = 1,  Total colors = 2.
-      GMRES projection relative residual 9.773399e-07 in 18 iterations.
-      GMRES w/ imp Schur used 1.462207e+01 sec
-    
-      When k = 2,  Total colors = 16.
-      GMRES projection relative residual 9.773399e-07 in 18 iterations.
-      GMRES w/ imp Schur used 1.464088e+01 sec
-    
-      When k = 3,  Total colors = 16.
-      GMRES projection relative residual 9.773399e-07 in 18 iterations.
-      GMRES w/ imp Schur used 1.457633e+01 sec
-    
-    % New Handle w/o ap_oo opt:
-    Schur Complement GPU ver:
-      When k = 1,  Total colors = 2.
-      GMRES projection relative residual 9.773399e-07 in 18 iterations.
-      GMRES w/ imp Schur used 1.444142e+01 sec
-    
-      When k = 2,  Total colors = 16.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 1.444968e+01 sec
-
-  When k = 3,  Total colors = 16.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 1.438926e+01 sec
-
-% New Handle w/ ap_oo opt:
-Schur Complement GPU ver:
-  When k = 1,  Total colors = 2.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 1.115755e+00 sec
-
-  When k = 2,  Total colors = 16.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 8.594124e-01 sec
-
-  When k = 3,  Total colors = 16.
-  GMRES projection relative residual 9.773399e-07 in 18 iterations.
-  GMRES w/ imp Schur used 9.497257e-01 sec
-%% Partial ILU(0)(A) with Schur Complement
-fprintf('Schur Complement Solver on bg13:\n')
-iters_sch = zeros(1, k_total);
-n = N_new;
-
-resvec_even = cell(1, k_total);
-for k = 1:k_total 
-    [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
-    colors = kron(colors, B_perm);
-    [~, perm] = sort(colors);
-    A_perm = A(perm, perm);
-    b_perm_gpu = bg(perm);
-    % colorView(A_perm, perm, colors, nColors, k);
-
-    ap_ee = A_perm(1:n/2,1:n/2);         ap_ee = gpuArray(ap_ee);
-    ap_eo = A_perm(1:n/2, n/2+1:end);    ap_eo = gpuArray(ap_eo);
-    ap_oe = A_perm(n/2+1:end, 1:n/2);    ap_oe = gpuArray(ap_oe);
-    
-    ap_oo = A_perm(n/2+1:end, n/2+1:end);ap_oo = gpuArray(ap_oo);
-    solve_ap_oo = @(xg) ap_oo\xg; % normal ap_oo solve
-    % [l_cpu, u_cpu, p_oo, q_oo] = lu(ap_oo);
-    % solve_ap_oo = @(y) q_oo*(u_cpu \ (l_cpu \ (p_oo*y))); % on cpu
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %  Sparse MLDIVIDE only supports sparse square matrices      %
-    %  divided by full column vectors.                           %
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % === Schur Complement === %
-    s_ee_gpu = @(xg)... 
-       ap_ee*xg - ap_eo * (solve_ap_oo(ap_oe*xg)) ; % IMPLICITLY, do the inv ap_oo in advance, inv(ap_oo) should be also diag not dense.
-    
-    % === RHS: Eliminate odd -> GMRES solve for even === %
-    bp_e_gpu = b_perm_gpu(1:n/2);
-    bp_o_gpu = b_perm_gpu(n/2+1 : end);
-    rhs_e_gpu = bp_e_gpu - ap_eo * (solve_ap_oo(bp_o_gpu));
-    % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
-    
-    % === Preconditioned Handle (Left Preconditioning) === %
-    setup.type    = 'nofill';
-    setup.droptol = 0;  
-    [L, U] = ilu(A_perm, setup);       % on CPU
-    M = L*U; M_ee = M(1:n/2, 1:n/2);   % "Cut" on CPU
-    M_ee = gpuArray(M_ee);
-    M_handle = @(xg) M_ee\xg;
-    
-    fprintf('  GMRES started...')
-    tic;
-    % s_ee_mul = @(x)ap_ee*x - ap_eo * (ap_oo_inv*(ap_oe*x)); 
-    % x0 = bp_e_t;
-    [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
-        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle); 
-    t_imp = toc;
-
-    x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
-    iters_sch(k) = sum(iter_even);
-    
-    fprintf('  When k = %d,', k)
-    fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, sum(iter_even));
-    fprintf('  GMRES w/ imp Schur used %d sec\n\n', t_imp);
-     
-    % Combine x_even and x_odd
-end
+%% Logs
+% [8 8 8 16], bs = 48; RHS=[1:N]; p = [0 0 0 0]
+Pure iterative results w/o preconditioner:
+  The actual residual norm = 8.655417e-01
+  GMRES projection relative residual 8.655417e-01 in 8000 iterations.
+  GMRES cost 3.062533e+01 sec
