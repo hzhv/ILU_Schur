@@ -26,36 +26,32 @@ rng(1); parallel.gpu.rng(1, 'Philox');
 % === Hyper Params ===
 maxit = 1000;
 restart = 40;
-p=[1 1 1 1];
-k_total=4;
+p=[0 0 0 0];
+k_total=5;
 tol=1e-2; % coarse operator
-bs = 48;
-% bs = 64;                  % block size of each "block" in diagonal
+
 
 % === Sparse System ===
-% D = [4 4 4 8];            % from read_coarse.m  
-% A = load('A.mat').A; 
+D = [4 4 4 8];              % from read_coarse.m  
+A = load('A.mat').A; 
+bs = 64;                  % block size of each "block" in diagonal
 
-D = [8 8 8 16];
-A = lap_kD_periodic(D,1);  
-% % C  = randn(bs);
-% % B  = C*C';                  % make B SPD
-% % B  = B + 1e-3*eye(bs);     
-% % B  = B / norm(B,2); 
-A = kron(A, ones(bs));        % For denser "boxed" diag
-A = A + speye(size(A,1))*1e-2;  % make it non-singular
+% D = [8 8 8 16];
+% A = lap_kD_periodic(D,1);  
+% A = kron(A, ones(bs));    % For denser "boxed" diag
+% A = A + speye(size(A,1))*1e-2;  % make it non-singular
+% bs = 48;
+% B_perm = ones(bs,1);        % for Kron(A, B)
 N_new = size(A,1);
 Ag = gpuArray(A);
 
-% B_perm = ones(bs,1);        % for Kron(A, B)
 %%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 % figure; spy(A); title("Original A");
 
 % ======= RHS ========
-% b = load('rhs.mat').b;
+b = load('rhs.mat').b;
 % b = (1:N_new)';
-b = rand(N_new,10);
-% b = rand(N_new, 1);
+% b = rand(N_new,10);
 bg = gpuArray(b);
 
 % x0 = b;
@@ -132,6 +128,21 @@ for k = 1:2:k_total
     relres_true{k} = resvec/norm( U\b_perm_gpu );
 end
 %% Multi-reordering w/ Even-Odd Reordering
+% Check the EO and Coloring compatibility first
+
+for k = 1:k_total
+    [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
+    [isOK, badCs, loc] = check_eo_compatibility(Colors, D, N_new);
+    fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
+    if ~isOK
+        fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
+        disp(loc{1});
+    else
+        fprintf('  OK: coloring is even/odd compatible.\n');
+    end
+end
+
+% Then Solve A:
 fprintf('Even-Odd reordering then multi-coloring:\n');
 iters_eo = zeros(1, k_total);
 relres_true_eo = cell(1, k_total);
@@ -403,9 +414,3 @@ t_bicgstab_ilu = toc;
 fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter);
 fprintf('  bicgstab cost %d sec\n\n', t_bicgstab_ilu);
 
-%% Logs
-% [8 8 8 16], bs = 48; RHS=[1:N]; p = [0 0 0 0]
-Pure iterative results w/o preconditioner:
-  The actual residual norm = 8.655417e-01
-  GMRES projection relative residual 8.655417e-01 in 8000 iterations.
-  GMRES cost 3.062533e+01 sec
