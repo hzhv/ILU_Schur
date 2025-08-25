@@ -1,3 +1,10 @@
+%    One important detail for the even-odd experiments is to produce
+% compatible coloring schemas with even-odd coloring. That means that all
+% the vertices of the same color have to have the same oddity (being
+% either even or odd). And you have to make sure that you group the colors
+% properly such that when you take half of the matrix, you take all
+% vertices being even/odd.
+%
 function [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p)
 % Input：
 %   D = []     % Array of lattice dimension sizes of length d
@@ -18,8 +25,8 @@ for i = 1:N
     x = cell2mat(coords) - 1;
     eo(i) = mod(sum(x),2);
 end
-[~, eoPerms] = sort(eo);
-natOrder(eoPerms) = 1:N; % Nature Ordering Map
+[~, eoPerms] = sort(eo);   % eoPerm is cur ele in original eo position
+natOrder(eoPerms) = 1:N;   % Nature Ordering Map
 
 % Get the neighbors that distance <= k
 offs = Create_Stencil(zeros(1,d),k,p,1);

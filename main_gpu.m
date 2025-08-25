@@ -2,7 +2,7 @@
 % Problems:
 %  Preconditioners of GPU_GMRES in the Schur Complement section
 %  1. try Bicgstab if GMRES failed
-%  2. try [8 8 8 16], bs = 48; RHS=[1:N]; p = [ 0 0 0 2], all 0, all 1, [1 -1 1 -1]
+%  2. try [8 8 8 16], bs = 48; RHS=[1:N]; p = [0 0 0 2], all 0, all 1, [1 -1 1 -1]
 %% Testing the followings on GPU:
 %
 %   Permute matrix with multicoloring, even-odd reordering, 
@@ -25,34 +25,41 @@ rng(1); parallel.gpu.rng(1, 'Philox');
 
 % === Hyper Params ===
 maxit = 1000;
-restart = 8;
-p=[0 0 0 0];
-k_total=3;
-tol= 1e-2; % coarse operator
+restart = 40;
+p=[1 1 1 1];
+k_total=4;
+tol=1e-2; % coarse operator
 bs = 48;
+% bs = 64;                  % block size of each "block" in diagonal
 
 % === Sparse System ===
+% D = [4 4 4 8];            % from read_coarse.m  
 % A = load('A.mat').A; 
-D = [8 8 8 16];
-A = lap_kD_periodic(D,1);   % eigen vector all the same % this on GPU
-A = kron(A, (rand(bs)));    % For denser "boxed" diag
-N_new = size(A, 1);
-A = A + speye(N_new)*1e-2;  % make it non-singular
-Ag = gpuArray(A);
-% bs = 64;                  % block size of each "block" in diagonal
-B_perm = ones(64,1);        % for Kron(A, B)
 
+D = [8 8 8 16];
+A = lap_kD_periodic(D,1);  
+% % C  = randn(bs);
+% % B  = C*C';                  % make B SPD
+% % B  = B + 1e-3*eye(bs);     
+% % B  = B / norm(B,2); 
+A = kron(A, ones(bs));        % For denser "boxed" diag
+A = A + speye(size(A,1))*1e-2;  % make it non-singular
+N_new = size(A,1);
+Ag = gpuArray(A);
+
+% B_perm = ones(bs,1);        % for Kron(A, B)
 %%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 % figure; spy(A); title("Original A");
 
 % ======= RHS ========
 % b = load('rhs.mat').b;
-b = (1:N_new)';
+% b = (1:N_new)';
+b = rand(N_new,10);
+% b = rand(N_new, 1);
 bg = gpuArray(b);
-% bg = randn(N_new, 1, "gpuArray");
 
 % x0 = b;
-%% "Pure Iterations"
+%% "Pure GMRES Iterations"
 tic;
 fprintf('Pure iterative results w/o preconditioner:\n');
 [xg, flag, relres, iter, resvec] = ... % 
@@ -73,14 +80,16 @@ Lg = gpuArray(L); Ug = gpuArray(U);
 M_handle = @(x) Ug\(Lg\x);
 
 tic;
+for bdx = 1:10
 [x_perm_gpu, flag, relres, iter, resvec] = ...
-    gmres(Ag, bg, restart, tol, maxit, [], M_handle); % Handle
+    gmres(Ag, bg(:, bdx), restart, tol, maxit, [], M_handle); % Handle
 relres_true = norm(bg - Ag*x_perm_gpu)/norm(bg);
 t_ilu = toc;
 total_iter_ilu0 = (iter(1)-1)*restart + iter(2);
 fprintf('  The actual residual norm = %d\n', relres_true);
 fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_ilu0);
 fprintf('  GMRES cost %d sec\n\n', t_ilu);
+end
 %% Use muticoloring only without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
 iters = zeros(1, k_total);
@@ -174,7 +183,7 @@ n = N_new;
 
 resvec_even = cell(1, k_total);
 nColors_Schur = zeros(1, k_total);
-for k = 1:2:k_total 
+for k = 1:k_total 
     [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     colors = kron(colors, B_perm);
     [~, perm] = sort(colors);
@@ -188,7 +197,7 @@ for k = 1:2:k_total
 
     ap_oo = A_perm(n/2+1:end, n/2+1:end); ap_oo = gpuArray(ap_oo);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Build 64x64xnb on CPU
+    % % Build 64x64xnb on CPU
     % nb=size(ap_oo,1)/bs;
     % AooPages = zeros(bs,bs,nb,'double');
     % for b = 1:nb 
@@ -223,9 +232,9 @@ for k = 1:2:k_total
     % === Preconditioned Handle (Left Preconditioning) === %
     setup.type    = 'nofill';
     setup.droptol = 0;  
-    [L, U] = ilu(A_perm, setup);       % on CPU
+    [L, U] = ilu(A_perm, setup);      % on CPU
     M = L*U; 
-    M_ee_old = M(1:n/2, 1:n/2);   % "Cut" on CPU
+    M_ee_old = M(1:n/2, 1:n/2);       % "Cut" on CPU
     q_M = colamd(M_ee_old);
     M_ee = M_ee_old(:, q_M);
 
@@ -253,7 +262,7 @@ for k = 1:2:k_total
     fprintf('  GMRES Start...\n');
     tic;
     [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
-        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle); 
+        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], []); 
     t_imp = toc;
     total_iter = (iter_even(1)-1)*restart + iter_even(2);
     x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
@@ -266,7 +275,7 @@ for k = 1:2:k_total
      
     % Combine x_even and x_odd
 end
-%% Plot w/ EO versus w/o EO
+%% Plot w/ EO versus w/o EO, iterations and convergence
 figure;
 plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
 plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);
@@ -277,7 +286,9 @@ grid on;
 
 figure; clf;
 for k = 1:2:k_total
-    semilogy(relres_true{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
+    aa=relres_true{k};
+ 
+    semilogy(aa/aa(1),'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
     hold on;
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -302,9 +313,11 @@ title('GMRES Residual Convergence');
 legend show;
 grid on;
 %% Plot Schur Convergence
-figure; clf;
-for k = 1:2:k_total
-    semilogy(resvec_even{k}, '-', 'LineWidth', 1.5, 'DisplayName', sprintf('w/ EO, k = %d', k));
+figure; 
+for k = 1:k_total
+
+    aa=resvec_even{k};
+    semilogy(aa/aa(1),'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
     hold on;
 end
 xlabel('Iteration');
@@ -313,7 +326,7 @@ yline(tol,'r--','DisplayName', sprintf('Tol'));
 title('Schur Comp. GMRES Residual Convergence without EO');
 legend show;
 grid on;
-
+%%
 figure; subplot(1,2,1);
 X = 1:2:k_total;
 Y = [iters(:), iters_eo(:), iters_sch(:)];
@@ -321,7 +334,7 @@ total_colors = [nColors_noEO(:), nColors_EO(:), nColors_EO(:)];
 bar(X, Y, 'grouped'); hold on;
 
 yline(total_iter_pure, '--r', 'Pure GMRES', 'LineWidth', 2);
-yline(total_iter_ilu0, '--b', 'ILU(0) only', 'LineWidth', 2);
+yline(total_iter_ilu0, '--b', 'ILU(0) Natural', 'LineWidth', 2);
 
 xlabel('k');
 ylabel('GMRES Iterations');
@@ -363,6 +376,32 @@ xlabel('Col Index after Reordering');
 ylabel('Row Index after Reordering');
 grid on;
 end
+%% bicgstab w/o ilu(0)
+fprintf('Pure Bicgstab:');
+tic;
+[x_perm_gpu, flag, relres, iter, resvec] = ...
+    bicgstab(Ag, bg, tol, maxit, [], []);
+t_bicgstab = toc;
+
+fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter);
+fprintf('  bicgstab cost %d sec\n\n', t_bicgstab);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Bicgstab w/ ilu(0):');
+% bicgstab w/ ilu(0)
+setup.type    = 'nofill';
+setup.droptol = 0;  
+[L, U] = ilu(A, setup); % Matlab can't do ILU on GPU
+Lg = gpuArray(L); Ug = gpuArray(U);
+
+M_handle = @(x) Ug\(Lg\x);
+
+tic;
+[x_perm_gpu, flag, relres, iter, resvec] = ...
+    bicgstab(Ag, bg, tol, maxit, [], M_handle);
+t_bicgstab_ilu = toc;
+
+fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter);
+fprintf('  bicgstab cost %d sec\n\n', t_bicgstab_ilu);
 
 %% Logs
 % [8 8 8 16], bs = 48; RHS=[1:N]; p = [0 0 0 0]
