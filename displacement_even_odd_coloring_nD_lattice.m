@@ -4,7 +4,7 @@
 % either even or odd). And you have to make sure that you group the colors
 % properly such that when you take half of the matrix, you take all
 % vertices being even/odd.
-%
+
 function [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p)
 % Input：
 %   D = []     % Array of lattice dimension sizes of length d
@@ -12,7 +12,8 @@ function [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p)
 %   p = []     % Displacement array of length d
 %
 % Output:
-%   Colors     % Array of lattice colors
+%   Colors     % coloring results for each vertices
+%   nColors    % number of Colors
 
 d = length(D);
 N = prod(D);
@@ -31,8 +32,8 @@ natOrder(eoPerms) = 1:N;   % Nature Ordering Map
 % Get the neighbors that distance <= k
 offs = Create_Stencil(zeros(1,d),k,p,1);
 
-% Natural ordering greedy coloring
-for t = 1:N 
+maxColorEven = 0; % To ensure same color has same oddity
+for t = 1:N       % Natural ordering greedy coloring
     idx = eoPerms(t);
     coords = cell(1,d);
     [coords{:}] = ind2sub(D, idx);
@@ -60,9 +61,12 @@ for t = 1:N
     while used(c)
         c = c + 1;
     end
-
-    Colors(idx) = c;
-end
-
-nColors = max(Colors);
+    
+    if eo(idx) == 0
+        Colors(idx) = c;
+        if c > maxColorEven; maxColorEven = c;end
+    else % Color Odd 
+        Colors(idx) = c + maxColorEven;
+    end
+    nColors = length(unique(Colors));
 end
