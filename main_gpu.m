@@ -27,9 +27,8 @@ rng(1); parallel.gpu.rng(1, 'Philox');
 maxit = 1000;
 restart = 40;
 p=[0 0 0 0];
-k_total=5;
+k_total=3;
 tol=1e-2; % coarse operator
-
 
 % === Sparse System ===
 D = [4 4 4 8];              % from read_coarse.m  
@@ -41,7 +40,8 @@ bs = 64;                  % block size of each "block" in diagonal
 % A = kron(A, ones(bs));    % For denser "boxed" diag
 % A = A + speye(size(A,1))*1e-2;  % make it non-singular
 % bs = 48;
-% B_perm = ones(bs,1);        % for Kron(A, B)
+
+B_perm = ones(bs,1);        % for Kron(A, B)
 N_new = size(A,1);
 Ag = gpuArray(A);
 
@@ -76,7 +76,7 @@ Lg = gpuArray(L); Ug = gpuArray(U);
 M_handle = @(x) Ug\(Lg\x);
 
 tic;
-for bdx = 1:10
+for bdx = 1:size(bg,2)
 [x_perm_gpu, flag, relres, iter, resvec] = ...
     gmres(Ag, bg(:, bdx), restart, tol, maxit, [], M_handle); % Handle
 relres_true = norm(bg - Ag*x_perm_gpu)/norm(bg);
@@ -91,7 +91,7 @@ fprintf('Only multi-coloring w/o Even-Odd:\n');
 iters = zeros(1, k_total);
 relres_true = cell(1, k_total);
 nColors_noEO = zeros(1, k_total);
-for k = 1:2:k_total
+for k = 1:k_total
     [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     Colors = kron(Colors, B_perm);
     [~, perm] = sort(Colors);
@@ -147,7 +147,7 @@ fprintf('Even-Odd reordering then multi-coloring:\n');
 iters_eo = zeros(1, k_total);
 relres_true_eo = cell(1, k_total);
 nColors_EO = zeros(1, k_total);
-for k = 1:2:k_total
+for k = 1:k_total
     % [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     Colors = kron(Colors, B_perm);

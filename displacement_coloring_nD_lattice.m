@@ -45,5 +45,5 @@ for idx = 1:N
     Colors(idx) = c;
 end
 
-nColors = max(Colors);
+nColors = length(unique(Colors));
 end

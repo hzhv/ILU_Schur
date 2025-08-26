@@ -62,10 +62,10 @@ for t = 1:N       % Natural ordering greedy coloring
         c = c + 1;
     end
     
-    if eo(idx) == 0
+    if eo(idx) == 0 % EVEN, color it as usual
         Colors(idx) = c;
         if c > maxColorEven; maxColorEven = c;end
-    else % Color Odd 
+    else            % ODD, add some "shift"
         Colors(idx) = c + maxColorEven;
     end
     nColors = length(unique(Colors));
