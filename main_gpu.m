@@ -25,7 +25,7 @@ rng(1); parallel.gpu.rng(1, 'Philox');
 
 % === Hyper Params ===
 maxit = 1000;
-restart = 40;
+restart = 10;
 p=[0 0 0 0];
 k_total=3;
 tol=1e-2; % coarse operator
@@ -249,12 +249,12 @@ for k = 1:k_total
     q_M = colamd(M_ee_old);
     M_ee = M_ee_old(:, q_M);
 
-    % M_ee_g = full(gpuArray(M_ee));   % NOOOO, memory boom!
+    % M_ee_g = full(gpuArray(M_ee));  % NOOOO, memory boom!
     
     % === AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt ===
     % M_ee, M_oo are pure block diagonal matrices, no zero pivot
     [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc GMRES
-    M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg)));
+    M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
 
     M_handle_old = @(xg) gpuArray(M_ee_old)\xg;
     %%%%%%%%%%%%%%%%%%%%%%%%% Timers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -296,7 +296,7 @@ title('GMRES Iterations vs. k');
 grid on;
 
 figure; clf;
-for k = 1:2:k_total
+for k = 1:k_total
     aa=relres_true{k};
  
     semilogy(aa/aa(1),'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
@@ -306,14 +306,14 @@ end
 xlabel('Iteration');
 ylabel('Residual Norm');
 yline(tol,'r--');
-title('GMRES Residual w/o EO');
+title('GMRES Residual Conv. w/o EO');
 legend show;
 grid on;
 
 figure;
 clf;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-for k = 1:2:k_total
+for k = 1:k_total
     semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
     hold on;
 end
@@ -339,7 +339,7 @@ legend show;
 grid on;
 %%
 figure; subplot(1,2,1);
-X = 1:2:k_total;
+X = 1:k_total;
 Y = [iters(:), iters_eo(:), iters_sch(:)];
 total_colors = [nColors_noEO(:), nColors_EO(:), nColors_EO(:)];
 bar(X, Y, 'grouped'); hold on;
@@ -349,7 +349,7 @@ yline(total_iter_ilu0, '--b', 'ILU(0) Natural', 'LineWidth', 2);
 
 xlabel('k');
 ylabel('GMRES Iterations');
-legend('Without EO','With EO','Schur Comp.','Pure GMRES','ILU(0) only','Location','northwest');
+legend('Without EO','With EO','Schur Comp.','Pure GMRES','ILU(0) Natural','Location','northwest');
 title('GMRES Iterations vs. k');
 grid on;
 
