@@ -31,7 +31,7 @@ k_total=3;
 tol=1e-2; % coarse operator
 
 % === Sparse System ===
-D = [4 4 4 8];              % from read_coarse.m  
+D = [4 4 4 8];            % from read_coarse.m  
 A = load('A.mat').A; 
 bs = 64;                  % block size of each "block" in diagonal
 
@@ -58,10 +58,11 @@ bg = gpuArray(b);
 %% "Pure GMRES Iterations"
 tic;
 fprintf('Pure iterative results w/o preconditioner:\n');
-[xg, flag, relres, iter, resvec] = ... % 
+[xg, flag, relres, iter, resvec_GMRES] = ... % 
     gmres(Ag, bg, restart, tol, maxit, [], []);
-relres_true = norm(bg - Ag*xg)/norm(bg);
 tp = toc;
+
+relres_true = norm(bg - Ag*xg)/norm(bg);
 total_iter_pure = (iter(1)-1)*restart + iter(2);
 fprintf('  The actual residual norm = %d\n', relres_true);
 fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_pure);
@@ -77,19 +78,35 @@ M_handle = @(x) Ug\(Lg\x);
 
 tic;
 for bdx = 1:size(bg,2)
-[x_perm_gpu, flag, relres, iter, resvec] = ...
+[x_perm_gpu, flag, relres, iter, resvec_ilu0] = ...
     gmres(Ag, bg(:, bdx), restart, tol, maxit, [], M_handle); % Handle
-relres_true = norm(bg - Ag*x_perm_gpu)/norm(bg);
 t_ilu = toc;
+
+relres_true_ilu0 = norm(bg - Ag*x_perm_gpu)/norm(bg);
 total_iter_ilu0 = (iter(1)-1)*restart + iter(2);
-fprintf('  The actual residual norm = %d\n', relres_true);
+fprintf('  The actual residual norm = %d\n', relres_true_ilu0);
 fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_ilu0);
 fprintf('  GMRES cost %d sec\n\n', t_ilu);
 end
 %% Use muticoloring only without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
+evenCs_noEO = zeros(1, k_total);
+for k = 1:k_total
+    [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
+    [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
+    evenCs_noEO(k) = length(unique(evenCs));
+    fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
+    if ~isOK
+        fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
+        disp(loc{1});
+        error('Aborted.')
+    else
+        fprintf('  OK: coloring is even/odd compatible.\n');
+    end
+end
+
 iters = zeros(1, k_total);
-relres_true = cell(1, k_total);
+res_noEO = cell(1, k_total);
 nColors_noEO = zeros(1, k_total);
 for k = 1:k_total
     [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
@@ -108,9 +125,10 @@ for k = 1:k_total
 
     % x0 = b_perm;
     tic;
-    [x_perm_gpu, flag, relres, iter, resvec] = ...
+    [x_perm_gpu, flag, relres, iter, resvec_noEO] = ...
         gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle);
     t_noEO = toc;
+    
     total_iter = (iter(1)-1)*restart + iter(2);
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
     
@@ -125,18 +143,20 @@ for k = 1:k_total
     end
     iters(k) = total_iter;
     nColors_noEO(k) = nColors;
-    relres_true{k} = resvec/norm( U\b_perm_gpu );
+    res_noEO{k} = resvec_noEO;
 end
-%% Multi-reordering w/ Even-Odd Reordering
-% Check the EO and Coloring compatibility first
-
+%% Multi-reordering with Even-Odd Reordering
+fprintf('Check the EO and Coloring compatibility first...:\n')
+evenCs_EO = zeros(1, k_total);
 for k = 1:k_total
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
-    [isOK, badCs, loc] = check_eo_compatibility(Colors, D, N_new);
+    [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
+    evenCs_EO(k) = length(unique(evenCs));
     fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
     if ~isOK
         fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
         disp(loc{1});
+        error('Aborted.')
     else
         fprintf('  OK: coloring is even/odd compatible.\n');
     end
@@ -145,7 +165,7 @@ end
 % Then Solve A:
 fprintf('Even-Odd reordering then multi-coloring:\n');
 iters_eo = zeros(1, k_total);
-relres_true_eo = cell(1, k_total);
+res_eo = cell(1, k_total);
 nColors_EO = zeros(1, k_total);
 for k = 1:k_total
     % [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
@@ -161,11 +181,11 @@ for k = 1:k_total
     setup.droptol = 0;  
     [L, U] = ilu(A_perm, setup); % Matlab can't do ILU on GPU
     Lg = gpuArray(L); Ug = gpuArray(U);
-    
+    M_handle = @(x) Ug\(Lg\x);
     % x0 = b_perm;
     tic;
-    [x_perm_gpu, flag, relres, iter, resvec] = ...
-        gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, Lg, Ug); % M1=Lg? M2=Ug?
+    [x_perm_gpu, flag, relres, iter, resvec_eo] = ...
+        gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
     t_eo = toc;
     total_iter = (iter(1)-1)*restart + iter(2);
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
@@ -180,7 +200,7 @@ for k = 1:k_total
         fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
     iters_eo(k) = total_iter;
-    relres_true_eo{k} = resvec/norm( U\b_perm_gpu );
+    res_eo{k} = resvec_eo;
     nColors_EO(k) = nColors;
 end
 % Undo permutation to original order
@@ -188,7 +208,22 @@ end
 % x = x_perm(invperm);
 
 %% Partial ILU(0)(A) with Schur Complement
-fprintf('Schur Complement on GPU:\n')
+fprintf('GMRES Schur Complement on GPU:\n')
+evenCs_Schur = zeros(1, k_total);
+for k = 1:k_total
+    [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
+    [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
+    evenCs_Schur(k) = length(unique(evenCs));
+    fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
+    if ~isOK
+        fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
+        disp(loc{1});
+        error('Aborted.')
+    else
+        fprintf('  OK: coloring is even/odd compatible.\n');
+    end
+end
+
 iters_sch = zeros(1, k_total);
 n = N_new;
 
@@ -202,9 +237,9 @@ for k = 1:k_total
     b_perm_gpu = bg(perm);
     % colorView(A_perm, perm, colors, nColors, k);
 
-    ap_ee = A_perm(1:n/2,1:n/2);         ap_ee = gpuArray(ap_ee);
-    ap_eo = A_perm(1:n/2, n/2+1:end);    ap_eo = gpuArray(ap_eo);
-    ap_oe = A_perm(n/2+1:end, 1:n/2);    ap_oe = gpuArray(ap_oe);
+    ap_ee = A_perm(1:n/2,1:n/2);          ap_ee = gpuArray(ap_ee);
+    ap_eo = A_perm(1:n/2, n/2+1:end);     ap_eo = gpuArray(ap_eo);
+    ap_oe = A_perm(n/2+1:end, 1:n/2);     ap_oe = gpuArray(ap_oe);
 
     ap_oo = A_perm(n/2+1:end, n/2+1:end); ap_oo = gpuArray(ap_oo);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -273,75 +308,99 @@ for k = 1:k_total
     fprintf('  GMRES Start...\n');
     tic;
     [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
-        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], []); 
+        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle); 
     t_imp = toc;
+    
     total_iter = (iter_even(1)-1)*restart + iter_even(2);
+    relres_even_true = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(rhs_e_gpu);
     x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
+
     iters_sch(k) = total_iter;
     nColors_Schur(k) = nColors;
     fprintf('  When k = %d,', k)
     fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even, total_iter);
+    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even_true, total_iter);
+    fprintf('  GMRES w/ imp Schur cost %d sec\n\n', t_imp);
+     
+    % === Combine x_even and x_odd ===
+end
+%% GMRES Schur Complement w/o preconditioner
+fprintf('GMRES Schur Complement no precondtioner:\n')
+iters_sch_no_prec = zeros(1, k_total);
+n = N_new;
+
+resvec_even_no_prec = cell(1, k_total);
+nColors_Schur = zeros(1, k_total);
+for k = 1:k_total 
+    [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
+    colors = kron(colors, B_perm);
+    [~, perm] = sort(colors);
+    A_perm = A(perm, perm);
+    b_perm_gpu = bg(perm);
+
+    ap_ee = A_perm(1:n/2,1:n/2);          ap_ee = gpuArray(ap_ee);
+    ap_eo = A_perm(1:n/2, n/2+1:end);     ap_eo = gpuArray(ap_eo);
+    ap_oe = A_perm(n/2+1:end, 1:n/2);     ap_oe = gpuArray(ap_oe);
+
+    ap_oo = A_perm(n/2+1:end, n/2+1:end); ap_oo = gpuArray(ap_oo);
+ 
+    solve_oo_gpu = @(xg) ap_oo\xg; % normal
+
+    s_ee_gpu = @(xg)...
+       ap_ee*xg - ap_eo * solve_oo_gpu(ap_oe*xg);
+
+    % Eliminate odd -> GMRES solve for even
+    bp_e_gpu = b_perm_gpu(1:n/2);
+    bp_o_gpu = b_perm_gpu(n/2+1 : end);
+    % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
+    rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
+
+    fprintf('  GMRES Start...\n');
+    tic;
+    [x_even_gpu, flag, relres_even_no, iter_even, resvec_even_no_prec{k}] = ...
+        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], []); 
+    t_imp = toc;
+
+    total_iter = (iter_even(1)-1)*restart + iter_even(2);
+    x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
+    relres_even_no_true = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(rhs_e_gpu);
+    iters_sch_no_prec(k) = total_iter;
+    nColors_Schur(k) = nColors;
+
+    fprintf('  When k = %d,', k)
+    fprintf('  Total colors = %d.\n', nColors);
+    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even_no_true, total_iter);
     fprintf('  GMRES w/ imp Schur cost %d sec\n\n', t_imp);
      
     % Combine x_even and x_odd
 end
-%% Plot w/ EO versus w/o EO, iterations and convergence
-figure;
-plot(1:k_total, iters, '-o', 'LineWidth', 2); hold on;
-plot(1:k_total, iters_eo, '-s', 'LineWidth', 2);
-xlabel('k'); ylabel('GMRES Iterations');
-legend('Without EO', 'With EO','Location', 'northwest');
-title('GMRES Iterations vs. k');
-grid on;
 
-figure; clf;
-for k = 1:k_total
-    aa=relres_true{k};
- 
-    semilogy(aa/aa(1),'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
-    hold on;
-end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-xlabel('Iteration');
-ylabel('Residual Norm');
-yline(tol,'r--');
-title('GMRES Residual Conv. w/o EO');
-legend show;
-grid on;
-
-figure;
-clf;
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-for k = 1:k_total
-    semilogy(relres_true_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
-    hold on;
-end
-xlabel('Iteration');
-ylabel('Residual Norm');
-yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('GMRES Residual Convergence');
-legend show;
-grid on;
-%% Plot Schur Convergence
+%% Plot all Convergence
 figure; 
 for k = 1:k_total
 
-    aa=resvec_even{k};
-    semilogy(aa/aa(1),'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
+    semilogy(res_noEO{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
+    semilogy(res_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
+    
+    semilogy(resvec_even_no_prec{k}, 'LineWidth', 2, 'DisplayName', sprintf('w/ EO, no ilu(0), k = %d', k));
+    semilogy(resvec_even{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
     hold on;
 end
+semilogy(resvec_GMRES,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('GMRES'));
+semilogy(resvec_ilu0,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('ILU(0) Natural'));
+
 xlabel('Iteration');
 ylabel('Residual Norm');
 yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. GMRES Residual Convergence without EO');
+title('Schur Comp. GMRES Residual Convergence with EO');
 legend show;
 grid on;
 %%
 figure; subplot(1,2,1);
 X = 1:k_total;
-Y = [iters(:), iters_eo(:), iters_sch(:)];
-total_colors = [nColors_noEO(:), nColors_EO(:), nColors_EO(:)];
+Y = [iters(:), iters_eo(:), iters_sch(:), iters_sch_no_prec(:)];
+total_colors = [nColors_noEO(:), nColors_EO(:), nColors_Schur(:), nColors_Schur(:)];
+even_colors = [evenCs_noEO(:), evenCs_EO(:), evenCs_Schur(:), evenCs_Schur(:)];
 bar(X, Y, 'grouped'); hold on;
 
 yline(total_iter_pure, '--r', 'Pure GMRES', 'LineWidth', 2);
@@ -349,19 +408,21 @@ yline(total_iter_ilu0, '--b', 'ILU(0) Natural', 'LineWidth', 2);
 
 xlabel('k');
 ylabel('GMRES Iterations');
-legend('Without EO','With EO','Schur Comp.','Pure GMRES','ILU(0) Natural','Location','northwest');
+legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure GMRES','ILU(0) Natural','Location','northwest');
 title('GMRES Iterations vs. k');
 grid on;
 
 subplot(1,2,2);
-bar(X, total_colors, 'grouped');
+% bar(X, total_colors, 'grouped');
+bar(X, even_colors, 'grouped');
 xlabel('k');
-ylabel('Number of Colors');
-legend('Without EO', 'With EO', 'Schur Comp.', 'Location', 'northwest');
+ylabel('Number of Even Colors');
+legend('Without EO', 'With EO', 'Schur Comp.', 'Schur Comp. w/o ILU(0)', 'Location', 'northwest');
 
 p_str = strtrim(sprintf('%g ', p));
-title(sprintf('Number of Colors vs. k,  Disp = [%s]', p_str));
+title(sprintf('Number of Even Colors vs. k,  Disp = [%s]', p_str));
 grid on;
+
 %%
 function colorView(A, order, colors, nColors, k)
 figure;
@@ -387,30 +448,3 @@ xlabel('Col Index after Reordering');
 ylabel('Row Index after Reordering');
 grid on;
 end
-%% bicgstab w/o ilu(0)
-fprintf('Pure Bicgstab:');
-tic;
-[x_perm_gpu, flag, relres, iter, resvec] = ...
-    bicgstab(Ag, bg, tol, maxit, [], []);
-t_bicgstab = toc;
-
-fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter);
-fprintf('  bicgstab cost %d sec\n\n', t_bicgstab);
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fprintf('Bicgstab w/ ilu(0):');
-% bicgstab w/ ilu(0)
-setup.type    = 'nofill';
-setup.droptol = 0;  
-[L, U] = ilu(A, setup); % Matlab can't do ILU on GPU
-Lg = gpuArray(L); Ug = gpuArray(U);
-
-M_handle = @(x) Ug\(Lg\x);
-
-tic;
-[x_perm_gpu, flag, relres, iter, resvec] = ...
-    bicgstab(Ag, bg, tol, maxit, [], M_handle);
-t_bicgstab_ilu = toc;
-
-fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter);
-fprintf('  bicgstab cost %d sec\n\n', t_bicgstab_ilu);
-

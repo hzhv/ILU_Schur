@@ -1,6 +1,4 @@
-% 08/011/2025
-%  Now support Kron to make more "boxes" at diagonals
-%% Testing the followings:
+%% Testing the followings on CPU:
 %
 %   Permute matrix with multicoloring, 
 %   apply ILU(0) preconditioner, 
