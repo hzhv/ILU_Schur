@@ -4,7 +4,6 @@ rng(1); parallel.gpu.rng(1, 'Philox');
 
 % === Hyper Params ===
 maxit = 1000;
-% restart = 10;
 p=[0 0 0 0];
 k_total=3;
 tol=1e-2; % coarse operator
@@ -28,23 +27,23 @@ Ag = gpuArray(A);
 % figure; spy(A); title("Original A");
 
 % ======= RHS ========
-% b = load('rhs.mat').b;
-b = (1:N_new)';
+b = load('rhs.mat').b;
+% b = (1:N_new)';
 % b = rand(N_new,10);
 bg = gpuArray(b);
 
 % x0 = b;
-%% Pure bicgstab 
-fprintf('Pure Bicgstab:');
+%% Pure bicgstabl
+fprintf('Pure bicgstabl:');
 tic;
-[x_perm_gpu, flag, relres, iters, resvec_bicgstab] = ...
-    bicgstab(Ag, bg, tol, maxit, [], []);
-t_bicgstab = toc;
+[x_perm_gpu, flag, relres, iters, resvec_bicgstabl] = ...
+    bicgstabl(Ag, bg, tol, maxit, [], []);
+t_bicgstabl = toc;
 
-fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iters);
-fprintf('  bicgstab cost %d sec\n\n', t_bicgstab);
-%% bicgstab w/o ilu(0)
-fprintf('Bicgstab w/ ilu(0):');
+fprintf('  bicgstabl projection relative residual %e in %d iterations.\n', relres, iters);
+fprintf('  bicgstabl cost %d sec\n\n', t_bicgstabl);
+%% bicgstabl w/o ilu(0)
+fprintf('bicgstabl w/ ilu(0):');
 
 setup.type    = 'nofill';
 setup.droptol = 0;  
@@ -55,11 +54,11 @@ M_handle = @(x) Ug\(Lg\x);
 
 tic;
 [x_perm_gpu, flag, relres, iters_ilu0, resvec_ilu0] = ...
-    bicgstab(Ag, bg, tol, maxit, [], M_handle);
-t_bicgstab_ilu = toc;
+    bicgstabl(Ag, bg, tol, maxit, [], M_handle);
+t_bicgstabl_ilu = toc;
 
-fprintf('  bicgstab relative residual %e in %d iterations.\n', relres, iters_ilu0);
-fprintf('  bicgstab cost %d sec\n\n', t_bicgstab_ilu);
+fprintf('  bicgstabl relative residual %e in %d iterations.\n', relres, iters_ilu0);
+fprintf('  bicgstabl cost %d sec\n\n', t_bicgstabl_ilu);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Use muticoloring only without Even-Odd ordering
@@ -100,7 +99,7 @@ for k = 1:k_total
     % x0 = b_perm;
     tic;
     [x_perm_gpu, flag, relres, iter_noEO, resvec_noEO] = ...
-        bicgstab(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
+        bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
     t_noEO = toc;
     
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
@@ -109,10 +108,10 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  the actual residual norm = %d\n', relres_true_);
-        fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter_noEO);
-        fprintf('  bicgstab cost %d sec\n\n', t_noEO);
+        fprintf('  bicgstabl projection relative residual %e in %d iterations.\n', relres, iter_noEO);
+        fprintf('  bicgstabl cost %d sec\n\n', t_noEO);
     else
-        fprintf('  bicgstab failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
+        fprintf('  bicgstabl failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
     iters_noEO(k) = iter_noEO;
     nColors_noEO(k) = nColors;
@@ -158,7 +157,7 @@ for k = 1:k_total
     % x0 = b_perm;
     tic;
     [x_perm_gpu, flag, relres, iter_eo, resvec_eo] = ...
-        bicgstab(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+        bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
     t_eo = toc;
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
     
@@ -166,10 +165,10 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  the actual residual norm = %d\n', relres_true_);
-        fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iter_eo);
-        fprintf('  bicgstab cost %d sec\n\n', t_eo);   
+        fprintf('  bicgstabl projection relative residual %e in %d iterations.\n', relres, iter_eo);
+        fprintf('  bicgstabl cost %d sec\n\n', t_eo);   
     else
-        fprintf('  bicgstab failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
+        fprintf('  bicgstabl failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
     iters_eo(k) = iter_eo;
     res_eo{k} = resvec_eo;
@@ -180,7 +179,7 @@ end
 % x = x_perm(invperm);
 
 %% Partial ILU(0)(A) with Schur Complement
-fprintf('bicgstab Schur Complement on GPU:\n')
+fprintf('bicgstabl Schur Complement on GPU:\n')
 evenCs_Schur = zeros(1, k_total);
 for k = 1:k_total
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
@@ -259,7 +258,7 @@ for k = 1:k_total
     
     % === AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt ===
     % M_ee, M_oo are pure block diagonal matrices, no zero pivot
-    [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc bicgstab
+    [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc bicgstabl
     M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
 
     M_handle_old = @(xg) gpuArray(M_ee_old)\xg;
@@ -276,10 +275,10 @@ for k = 1:k_total
     %         t1*1e3, t2*1e3, t3*1e3, t4*1e3, t5*1e3);
     %%%%%%%%%%%%%%%%%%%%%%%%%% Timers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
-    fprintf('  bicgstab Start...\n');
+    fprintf('  bicgstabl Start...\n');
     tic;
     [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
-        bicgstab(s_ee_gpu, rhs_e_gpu, tol, maxit, [], M_handle_old); 
+        bicgstabl(s_ee_gpu, rhs_e_gpu, tol, maxit, [], M_handle_old); 
     t_imp = toc;
     
     relres_even_true = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(rhs_e_gpu);
@@ -289,13 +288,13 @@ for k = 1:k_total
     nColors_Schur(k) = nColors;
     fprintf('  When k = %d,', k)
     fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres_even_true, iter_even);
-    fprintf('  bicgstab w/ imp Schur cost %d sec\n\n', t_imp);
+    fprintf('  bicgstabl projection relative residual %e in %d iterations.\n', relres_even_true, iter_even);
+    fprintf('  bicgstabl w/ imp Schur cost %d sec\n\n', t_imp);
      
     % === Combine x_even and x_odd ===
 end
-%% bicgstab Schur Complement w/o preconditioner
-fprintf('bicgstab Schur Complement no precondtioner:\n')
+%% bicgstabl Schur Complement w/o preconditioner
+fprintf('bicgstabl Schur Complement no precondtioner:\n')
 iters_sch_no_prec = zeros(1, k_total);
 n = N_new;
 
@@ -325,10 +324,10 @@ for k = 1:k_total
     % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
     rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
 
-    fprintf('  bicgstab Start...\n');
+    fprintf('  bicgstabl Start...\n');
     tic;
     [x_even_gpu, flag, relres_even_no, iter_even, resvec_even_no_prec{k}] = ...
-        bicgstab(s_ee_gpu, rhs_e_gpu, tol, maxit, [], []);  
+        bicgstabl(s_ee_gpu, rhs_e_gpu, tol, maxit, [], []);  
     t_imp = toc;
 
     x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
@@ -338,8 +337,8 @@ for k = 1:k_total
 
     fprintf('  When k = %d,', k)
     fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres_even_no_true, iter_even);
-    fprintf('  bicgstab w/ imp Schur cost %d sec\n\n', t_imp);
+    fprintf('  bicgstabl projection relative residual %e in %d iterations.\n', relres_even_no_true, iter_even);
+    fprintf('  bicgstabl w/ imp Schur cost %d sec\n\n', t_imp);
      
     % Combine x_even and x_odd
 end
@@ -355,13 +354,13 @@ for k = 1:k_total
     semilogy(resvec_even{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
     hold on;
 end
-semilogy(resvec_bicgstab,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('bicgstab'));
+semilogy(resvec_bicgstabl,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('bicgstabl'));
 semilogy(resvec_ilu0,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('ILU(0) Natural'));
 
 xlabel('Iteration');
 ylabel('Residual Norm');
 yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. bicgstab Residual Convergence with EO');
+title('Schur Comp. bicgstabl Residual Convergence with EO');
 legend show;
 grid on;
 %%
@@ -372,13 +371,13 @@ total_colors = [nColors_noEO(:), nColors_EO(:), nColors_Schur(:), nColors_Schur(
 even_colors = [evenCs_noEO(:), evenCs_EO(:), evenCs_Schur(:), evenCs_Schur(:)];
 bar(X, Y, 'grouped'); hold on;
 
-yline(iters, '--r', 'Pure bicgstab', 'LineWidth', 2);
+yline(iters, '--r', 'Pure bicgstabl', 'LineWidth', 2);
 yline(iters_ilu0, '--b', 'ILU(0) Natural', 'LineWidth', 2);
 
 xlabel('k');
-ylabel('bicgstab Iterations');
-legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure bicgstab','ILU(0) Natural','Location','northwest');
-title('bicgstab Iterations vs. k');
+ylabel('bicgstabl Iterations');
+legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure bicgstabl','ILU(0) Natural','Location','northwest');
+title('bicgstabl Iterations vs. k');
 grid on;
 
 subplot(1,2,2);
