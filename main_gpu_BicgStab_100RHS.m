@@ -1,8 +1,3 @@
-% 08/01/2025
-% Problems:
-%  Preconditioners of GPU_GMRES in the Schur Complement section
-%  1. try Bicgstab if GMRES failed
-%  2. try [8 8 8 16], bs = 48; RHS=[1:N]; p = [0 0 0 2], all 0, all 1, [1 -1 1 -1]
 %% Testing the followings on GPU:
 %
 %   Permute matrix with multicoloring, even-odd reordering, 
@@ -59,15 +54,15 @@ num_rhs = size(b, 2);
 bg = gpuArray(b);
 
 % x0 = b;
-%% "Pure GMRES Iterations"
+%% "Pure BiCGstab Iterations"
 all_iterations = zeros(1, num_rhs);
 all_relres = zeros(1, num_rhs);
 tic;
-fprintf('Pure iterative results w/o preconditioner:\n');
+fprintf('Pure iterative results w/o any preconditioner:\n');
 for bdx = 1:num_rhs
     [xg, flag, relres, iter, resvec_pure] = ... % 
-        gmres(Ag, bg(:,bdx), restart, tol, maxit, [], []);
-    total_iter_pure = (iter(1)-1)*restart + iter(2);
+        bicgstabl(Ag, bg(:,bdx), tol, maxit, [], []);
+    total_iter_pure = iter;
     relres_true = norm(bg(:,bdx) - Ag*xg)/norm(bg(:,bdx));
     all_iterations(bdx) = total_iter_pure; 
     all_relres(bdx) = relres_true;
@@ -77,7 +72,7 @@ for bdx = 1:num_rhs
     remaining_width = bar_width - completed_width;
      % ProgressBar String
     progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-    msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
+    msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
    
     fprintf(repmat('\b', 1, last_msg_length));
     fprintf('%s', msg);
@@ -88,8 +83,8 @@ tp = toc;
 
 ave_iter_pure = mean(all_iterations);
 fprintf('  The average exact residual norm = %d\n', mean(all_relres));
-fprintf('  GMRES %f iterations. in average of %g\n', ave_iter_pure, num_rhs);
-fprintf('  GMRES cost %f sec in average of %g\n', tp/num_rhs, num_rhs);
+fprintf('  bicgstabl %f iterations. in average of %g\n', ave_iter_pure, num_rhs);
+fprintf('  bicgstabl cost %f sec in average of %g\n', tp/num_rhs, num_rhs);
 %% Use ILU(0) Preconditioner Only
 all_iterations_ilu0 = zeros(1, num_rhs);
 all_relres_ilu0 = zeros(1, num_rhs);
@@ -104,9 +99,9 @@ tic;
 for bdx = 1:num_rhs
     M_handle = @(x) Ug\(Lg\x); % Handle in loop
     [x_perm_gpu, flag, relres, iter, resvec_ilu0] = ...
-        gmres(Ag, bg(:, bdx), restart, tol, maxit, [], M_handle);
+        bicgstabl(Ag, bg(:, bdx), tol, maxit, [], M_handle);
     
-    total_iter = (iter(1)-1)*restart + iter(2);
+    total_iter = iter;
     relres_true = norm(bg(:,bdx) - Ag*x_perm_gpu)/norm(bg(:,bdx));
     all_iterations_ilu0(bdx) = total_iter; 
     all_relres_ilu0(bdx) = relres_true;
@@ -117,7 +112,7 @@ for bdx = 1:num_rhs
     remaining_width = bar_width - completed_width;
      % ProgressBar String
     progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-    msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
+    msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
    
     fprintf(repmat('\b', 1, last_msg_length));
     fprintf('%s', msg);
@@ -128,8 +123,8 @@ t_ilu = toc;
 
 ave_iter_ilu0 = mean(all_iterations_ilu0);
 fprintf('  The average exact residual norm = %d\n', mean(all_relres_ilu0));
-fprintf('  GMRES %f iterations. in average of %g\n', mean(all_iterations_ilu0), num_rhs);
-fprintf('  GMRES cost %f sec in average of %g\n', t_ilu/num_rhs, num_rhs);
+fprintf('  bicgstabl %f iterations. in average of %g\n', mean(all_iterations_ilu0), num_rhs);
+fprintf('  bicgstabl cost %f sec in average of %g\n', t_ilu/num_rhs, num_rhs);
 %% Use muticoloring only without Even-Odd ordering
 
 fprintf('Only multi-coloring w/o Even-Odd:\n');
@@ -176,9 +171,9 @@ for k = 1:k_total
         M_handle = @(x) Ug\(Lg\x);
       
         [x_perm_gpu, flag, relres, iter, resvec_noEO] = ...
-            gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle);
+            bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
         
-        all_iterations_noEO(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_iterations_noEO(k, bdx) = iter;
         all_relres_noEO(k, bdx) = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
         all_resvecs{bdx} = resvec_noEO;
         
@@ -188,7 +183,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -215,10 +210,10 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors_noEO(k));
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_noEO(k,:)));
-        fprintf('  GMRES %f iterations. in average of %g\n', iters(k), num_rhs);
-        fprintf('  GMRES cost %f sec in average of %g\n', t_noEO/num_rhs);
+        fprintf('  bicgstabl %f iterations. in average of %g\n', iters(k), num_rhs);
+        fprintf('  bicgstabl cost %f sec in average of %g\n', t_noEO/num_rhs);
     else
-        fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
+        fprintf('  bicgstabl failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
     
 end
@@ -269,9 +264,9 @@ for k = 1:k_total
         % x0 = b_perm;
         
         [x_perm_gpu, flag, relres, iter, resvec_EO] = ...
-            gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+            bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
 
-        all_iterations_EO(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_iterations_EO(k, bdx) = iter;
         all_relres_EO(k, bdx) = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
         all_resvecs{bdx} = resvec_EO;
         
@@ -281,7 +276,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -308,8 +303,8 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors_EO(k));
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k,:)));
-        fprintf('  GMRES %f iterations. in average of %g\n', iters_eo(k), num_rhs);
-        fprintf('  GMRES cost %f sec in average of %g\n', t_eo/num_rhs);
+        fprintf('  bicgstabl %f iterations. in average of %g\n', iters_eo(k), num_rhs);
+        fprintf('  bicgstabl cost %f sec in average of %g\n', t_eo/num_rhs);
     end
 end
 % Undo permutation to original order
@@ -318,7 +313,7 @@ end
 
 %% Partial ILU(0)(A) with Schur Complement
 
-fprintf('GMRES Schur Complement on GPU:\n')
+fprintf('bicgstabl Schur Complement on GPU:\n')
 all_iterations_even = zeros(k_total, num_rhs);
 all_relres_even = zeros(k_total, num_rhs);
 all_resvecs = cell(1, num_rhs);
@@ -390,13 +385,13 @@ for k = 1:k_total
 
     % === AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt ===
     % M_ee, M_oo are pure block diagonal matrices, no zero pivot
-    % [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc GMRES
+    % [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc bicgstabl
     % M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
     
     tic;
     for bdx = 1:num_rhs
         b_perm_gpu = bg(perm, bdx);
-        % Eliminate odd -> GMRES solve for even
+        % Eliminate odd -> bicgstabl solve for even
         bp_e_gpu = b_perm_gpu(1:n/2);
         bp_o_gpu = b_perm_gpu(n/2+1 : end);
         % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
@@ -417,10 +412,10 @@ for k = 1:k_total
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
         [x_even_gpu, flag, relres_even, iter, resvec_even] = ...
-            gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle_old);
+            bicgstabl(s_ee_gpu, rhs_e_gpu, tol, maxit, [], M_handle_old);
         x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
 
-        all_iterations_even(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_iterations_even(k, bdx) = iter;
         all_relres_even(k, bdx) = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(b_perm_gpu);
         all_resvecs{bdx} = resvec_even;
         %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -429,7 +424,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -456,15 +451,15 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k, :)));
-        fprintf('  GMRES %f iterations. in average of %g\n', iters_schur(k), num_rhs);
-        fprintf('  GMRES cost %f sec in average of %g\n', t_imp/num_rhs);
+        fprintf('  bicgstabl %f iterations. in average of %g\n', iters_schur(k), num_rhs);
+        fprintf('  bicgstabl cost %f sec in average of %g\n', t_imp/num_rhs);
     end
 
     % === Combine x_even and x_odd ===
 end
-%% GMRES Schur Complement w/o preconditioner
+%% bicgstabl Schur Complement w/o preconditioner
 
-fprintf('GMRES Schur Complement no precondtioner:\n')
+fprintf('bicgstabl Schur Complement no precondtioner:\n')
 all_iters_schur_no_prec = zeros(k_total, num_rhs);
 all_relres_schur_no_prec = zeros(k_total, num_rhs);
 all_resvecs = cell(1, num_rhs);
@@ -507,17 +502,17 @@ for k = 1:k_total
     tic;
     for bdx = 1:num_rhs
         b_perm_gpu = bg(perm, bdx);
-        % Eliminate odd -> GMRES solve for even
+        % Eliminate odd -> bicgstabl solve for even
         bp_e_gpu = b_perm_gpu(1:n/2);
         bp_o_gpu = b_perm_gpu(n/2+1 : end);
         % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
         rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
 
         [x_schur_no_prec_gpu, flag, relres_even, iter, resvec_even] = ...
-            gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], []);
+            bicgstabl(s_ee_gpu, rhs_e_gpu, tol, maxit, [], []);
         x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_schur_no_prec_gpu);
 
-        all_iters_schur_no_prec(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_iters_schur_no_prec(k, bdx) = iter;
         all_relres_schur_no_prec(k, bdx) = norm(rhs_e_gpu - s_ee_gpu(x_schur_no_prec_gpu))/norm(b_perm_gpu);
         all_resvecs{bdx} = resvec_even;
         %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -526,7 +521,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -553,8 +548,8 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_schur_no_prec(k, :)));
-        fprintf('  GMRES %f iterations. in average of %g\n', iters_schur_no_prec(k), num_rhs);
-        fprintf('  GMRES cost %f sec in average of %g\n', t_schur_no_prec/num_rhs);
+        fprintf('  bicgstabl %f iterations. in average of %g\n', iters_schur_no_prec(k), num_rhs);
+        fprintf('  bicgstabl cost %f sec in average of %g\n', t_schur_no_prec/num_rhs);
     end
 
     % === Combine x_even and x_odd ===
@@ -570,7 +565,7 @@ end
 xlabel('Iteration');
 ylabel('Residual Norm');
 % yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. GMRES Residual Convergence with EO');
+title('Schur Comp. bicgstabl Residual Convergence with EO');
 legend show;
 grid on;
 
@@ -584,19 +579,19 @@ end
 xlabel('Iteration');
 ylabel('Residual Norm');
 % yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. GMRES Residual Convergence with EO');
+title('Schur Comp. bicgstabl Residual Convergence with EO');
 legend show;
 grid on;
 
 figure; clf;
-semilogy(resvec_pure,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Pure GMRES'));
+semilogy(resvec_pure,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Pure bicgstabl'));
 hold on;
 semilogy(resvec_ilu0,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('ILU(0) Natural'));
 
 xlabel('Iteration');
 ylabel('Residual Norm');
 % yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. GMRES Residual Convergence with EO');
+title('Schur Comp. bicgstabl Residual Convergence with EO');
 legend show;
 grid on;
 %%
@@ -608,13 +603,13 @@ even_colors = [evenCs_noEO(:), evenCs_EO(:), evenCs_Schur(:), evenCs_schur_no_pr
 
 bar(X, Y, 'grouped'); hold on;
 
-yline(ave_iter_pure, '--r', 'Pure GMRES', 'LineWidth', 2);
+yline(ave_iter_pure, '--r', 'Pure bicgstabl', 'LineWidth', 2);
 yline(ave_iter_ilu0, '--b', 'ILU(0) Natural', 'LineWidth', 2);
 
 xlabel('k');
-ylabel('GMRES Iterations');
-legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure GMRES','ILU(0) Natural','Location','northwest');
-title('GMRES Iterations vs. k');
+ylabel('bicgstabl Iterations');
+legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure bicgstabl','ILU(0) Natural','Location','northwest');
+title('bicgstabl Iterations vs. k');
 grid on;
 
 subplot(1,2,2);
