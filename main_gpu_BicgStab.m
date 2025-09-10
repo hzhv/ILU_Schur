@@ -3,7 +3,7 @@ clc; clear; reset(gpuDevice);
 rng(1); parallel.gpu.rng(1, 'Philox');
 
 % === Hyper Params ===
-maxit = 1000;
+maxit = 300;
 % restart = 10;
 p=[0 0 0 0];
 k_total=3;
@@ -11,7 +11,9 @@ tol=1e-2; % coarse operator
 
 % === Sparse System ===
 D = [4 4 4 8];            % from read_coarse.m  
-A = load('A.mat').A; 
+A = load('A.mat').A;      % normalized
+
+A = A/norm(A, "fro");
 bs = 64;                  % block size of each "block" in diagonal
 
 % D = [8 8 8 16];
@@ -21,6 +23,9 @@ bs = 64;                  % block size of each "block" in diagonal
 % bs = 48;
 
 B_perm = ones(bs,1);        % for Kron(A, B)
+
+A_f = norm(A, 'fro');
+A = A / A_f;
 N_new = size(A,1);
 Ag = gpuArray(A);
 
@@ -29,22 +34,24 @@ Ag = gpuArray(A);
 
 % ======= RHS ========
 % b = load('rhs.mat').b;
-b = (1:N_new)';
+b = load('rhs_level2.mat').x; % 32768x10
+% b = (1:N_new)';
 % b = rand(N_new,10);
+b = b / A_f;
 bg = gpuArray(b);
 
 % x0 = b;
 %% Pure bicgstab 
-fprintf('Pure Bicgstab:');
+fprintf('Pure Bicgstabl:');
 tic;
 [x_perm_gpu, flag, relres, iters, resvec_bicgstab] = ...
-    bicgstab(Ag, bg, tol, maxit, [], []);
+    bicgstabl(Ag, bg, tol, maxit, [], []);
 t_bicgstab = toc;
 
 fprintf('  bicgstab projection relative residual %e in %d iterations.\n', relres, iters);
 fprintf('  bicgstab cost %d sec\n\n', t_bicgstab);
 %% bicgstab w/o ilu(0)
-fprintf('Bicgstab w/ ilu(0):');
+fprintf('Bicgstabl w/ ilu(0):');
 
 setup.type    = 'nofill';
 setup.droptol = 0;  
@@ -55,7 +62,7 @@ M_handle = @(x) Ug\(Lg\x);
 
 tic;
 [x_perm_gpu, flag, relres, iters_ilu0, resvec_ilu0] = ...
-    bicgstab(Ag, bg, tol, maxit, [], M_handle);
+    bicgstabl(Ag, bg, tol, maxit, [], M_handle);
 t_bicgstab_ilu = toc;
 
 fprintf('  bicgstab relative residual %e in %d iterations.\n', relres, iters_ilu0);
@@ -100,7 +107,7 @@ for k = 1:k_total
     % x0 = b_perm;
     tic;
     [x_perm_gpu, flag, relres, iter_noEO, resvec_noEO] = ...
-        bicgstab(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
+        bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
     t_noEO = toc;
     
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
@@ -158,7 +165,8 @@ for k = 1:k_total
     % x0 = b_perm;
     tic;
     [x_perm_gpu, flag, relres, iter_eo, resvec_eo] = ...
-        bicgstab(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+        bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+    % keyboard;
     t_eo = toc;
     relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
     

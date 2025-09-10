@@ -20,6 +20,8 @@
 %    tol     : tolerance for iterative solves
 
 clc; clear; reset(gpuDevice);
+bar_width = 50;                % ProgressBar width
+last_msg_length = 0;           % record last print length
 % close all;
 rng(1); parallel.gpu.rng(1, 'Philox');
 
@@ -49,110 +51,186 @@ Ag = gpuArray(A);
 % figure; spy(A); title("Original A");
 
 % ======= RHS ========
-b = load('rhs.mat').b;
+% b = load('rhs.mat').b;
+b = load('rhs_level2.mat').x; % 32768x10
+num_rhs = size(b, 2);
 % b = (1:N_new)';
 % b = rand(N_new,10);
 bg = gpuArray(b);
 
 % x0 = b;
 %% "Pure GMRES Iterations"
+all_iterations = zeros(1, num_rhs);
+all_relres = zeros(1, num_rhs);
 tic;
 fprintf('Pure iterative results w/o preconditioner:\n');
-[xg, flag, relres, iter, resvec_GMRES] = ... % 
-    gmres(Ag, bg, restart, tol, maxit, [], []);
+for bdx = 1:num_rhs
+    [xg, flag, relres, iter, resvec_pure] = ... % 
+        gmres(Ag, bg(:,bdx), restart, tol, maxit, [], []);
+    total_iter_pure = (iter(1)-1)*restart + iter(2);
+    relres_true = norm(bg(:,bdx) - Ag*xg)/norm(bg(:,bdx));
+    all_iterations(bdx) = total_iter_pure; 
+    all_relres(bdx) = relres_true;
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    progress = bdx / num_rhs;
+    completed_width = round(progress * bar_width);
+    remaining_width = bar_width - completed_width;
+     % ProgressBar String
+    progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
+    msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
+   
+    fprintf(repmat('\b', 1, last_msg_length));
+    fprintf('%s', msg);
+    last_msg_length = length(msg); 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+end
 tp = toc;
 
-relres_true = norm(bg - Ag*xg)/norm(bg);
-total_iter_pure = (iter(1)-1)*restart + iter(2);
-fprintf('  The actual residual norm = %d\n', relres_true);
-fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_pure);
-fprintf('  GMRES cost %d sec\n\n', tp);
+fprintf('  The average exact residual norm = %d\n', mean(all_relres));
+fprintf('  GMRES %f iterations. in average of %g\n', mean(all_iterations), num_rhs);
+fprintf('  GMRES cost %f sec in average of %g\n', tp/num_rhs, num_rhs);
 %% Use ILU(0) Preconditioner Only
-fprintf('Use ilu(0) but no multi-reordering:\n');
+all_iterations_ilu0 = zeros(1, num_rhs);
+all_relres_ilu0 = zeros(1, num_rhs);
+fprintf('ilu(0) natural, no multi-reordering:\n');
+
 setup.type    = 'nofill';
 setup.droptol = 0;  
-[L, U] = ilu(A, setup); % Matlab can't do ILU on GPU
+[L, U] = ilu(A, setup);        % Matlab can't do ILU on GPU
 Lg = gpuArray(L); Ug = gpuArray(U);
 
-M_handle = @(x) Ug\(Lg\x);
-
 tic;
-for bdx = 1:size(bg,2)
-[x_perm_gpu, flag, relres, iter, resvec_ilu0] = ...
-    gmres(Ag, bg(:, bdx), restart, tol, maxit, [], M_handle); % Handle
+for bdx = 1:num_rhs
+    M_handle = @(x) Ug\(Lg\x); % Handle in loop
+    [x_perm_gpu, flag, relres, iter, resvec_ilu0] = ...
+        gmres(Ag, bg(:, bdx), restart, tol, maxit, [], M_handle);
+    
+    total_iter = (iter(1)-1)*restart + iter(2);
+    relres_true = norm(bg(:,bdx) - Ag*x_perm_gpu)/norm(bg(:,bdx));
+    all_iterations_ilu0(bdx) = total_iter; 
+    all_relres_ilu0(bdx) = relres_true;
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    progress = bdx / num_rhs;
+    completed_width = round(progress * bar_width);
+    remaining_width = bar_width - completed_width;
+     % ProgressBar String
+    progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
+    msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
+   
+    fprintf(repmat('\b', 1, last_msg_length));
+    fprintf('%s', msg);
+    last_msg_length = length(msg); 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+end
 t_ilu = toc;
 
-relres_true_ilu0 = norm(bg - Ag*x_perm_gpu)/norm(bg);
-total_iter_ilu0 = (iter(1)-1)*restart + iter(2);
-fprintf('  The actual residual norm = %d\n', relres_true_ilu0);
-fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter_ilu0);
-fprintf('  GMRES cost %d sec\n\n', t_ilu);
-end
+fprintf('  The average exact residual norm = %d\n', mean(all_relres_ilu0));
+fprintf('  GMRES %f iterations. in average of %g\n', mean(all_iterations_ilu0), num_rhs);
+fprintf('  GMRES cost %f sec in average of %g\n', t_ilu/num_rhs, num_rhs);
 %% Use muticoloring only without Even-Odd ordering
 fprintf('Only multi-coloring w/o Even-Odd:\n');
+all_iterations_noEO = zeros(k_total, num_rhs);
+all_relres_noEO = zeros(k_total, num_rhs);
+all_resvecs = cell(1, num_rhs);
 evenCs_noEO = zeros(1, k_total);
+
 for k = 1:k_total
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
     [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
     evenCs_noEO(k) = length(unique(evenCs));
-    fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
     if ~isOK
         fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
         disp(loc{1});
         error('Aborted.')
     else
-        fprintf('  OK: coloring is even/odd compatible.\n');
+        fprintf('  OK: coloring is even/odd compatible.\n\n');
     end
+
 end
 
 iters = zeros(1, k_total);
 res_noEO = cell(1, k_total);
 nColors_noEO = zeros(1, k_total);
-for k = 1:k_total
+for k = 3:3
     [Colors, nColors] = displacement_coloring_nD_lattice(D, k, p);
     Colors = kron(Colors, B_perm);
     [~, perm] = sort(Colors);
     A_perm = A(perm, perm);
     A_perm_gpu = gpuArray(A_perm);  % Copy to GPU
-    b_perm_gpu = bg(perm);
     
-    % CPU ILU then copy to GPU
     setup.type    = 'nofill';
     setup.droptol = 0;  
     [L, U] = ilu(A_perm, setup); % Matlab can't do ILU on GPU
     Lg = gpuArray(L); Ug = gpuArray(U);
-    M_handle = @(x) Ug\(Lg\x);
-
-    % x0 = b_perm;
+    
     tic;
-    [x_perm_gpu, flag, relres, iter, resvec_noEO] = ...
-        gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle);
+    for bdx = 1:num_rhs
+        % if k == 3 && bdx == 39
+        % keyboard;
+        % end
+        b_perm_gpu = bg(perm, bdx);
+        M_handle = @(x) Ug\(Lg\x);
+      
+        [x_perm_gpu, flag, relres, iter, resvec_noEO] = ...
+            gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle);
+        
+        all_iterations_noEO(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_relres_noEO(k, bdx) = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
+        all_resvecs{bdx} = resvec_noEO;
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        progress = bdx / num_rhs;
+        completed_width = round(progress * bar_width);
+        remaining_width = bar_width - completed_width;
+         % ProgressBar String
+        progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
+        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+
+        fprintf(repmat('\b', 1, last_msg_length));
+        fprintf('%s', msg);
+        last_msg_length = length(msg); 
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    end
     t_noEO = toc;
+    fprintf('\n'); 
     
-    total_iter = (iter(1)-1)*restart + iter(2);
-    relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
+    max_iter = max(all_iterations_noEO(k,:));
+    resvec_matrix = nan(max_iter, num_rhs);
+    for i = 1:num_rhs
+        current_resvec = all_resvecs{i};
+        len = length(current_resvec);
+        resvec_matrix(1:len, i) = current_resvec(:); 
+    end
+    average_resvec = mean(resvec_matrix, 2, 'omitnan');
     
+    res_noEO{k} = average_resvec;
+    iters(k) = mean(all_iterations_noEO(k,:));
+    nColors_noEO(k) = nColors;
+
     if flag == 0
         fprintf('  When k = %d,', k);
-        fprintf('  total colors = %d\n', nColors);
-        fprintf('  the actual residual norm = %d\n', relres_true_);
-        fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
-        fprintf('  GMRES cost %d sec\n\n', t_noEO);
+        fprintf('  total colors = %d\n', nColors_noEO(k));
+        fprintf('  The average exact residual norm = %d\n', mean(all_relres_noEO(k,:)));
+        fprintf('  GMRES %f iterations. in average of %g\n', iters(k), num_rhs);
+        fprintf('  GMRES cost %f sec in average of %g\n', t_noEO/num_rhs);
     else
         fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
-    iters(k) = total_iter;
-    nColors_noEO(k) = nColors;
-    res_noEO{k} = resvec_noEO;
+
+    
 end
 %% Multi-reordering with Even-Odd Reordering
 fprintf('Check the EO and Coloring compatibility first...:\n')
+all_iterations_EO = zeros(k_total, num_rhs);
+all_relres_EO = zeros(k_total, num_rhs);
+all_resvecs = cell(1, num_rhs);
 evenCs_EO = zeros(1, k_total);
+
 for k = 1:k_total
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
     [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
     evenCs_EO(k) = length(unique(evenCs));
-    fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
     if ~isOK
         fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
         disp(loc{1});
@@ -174,34 +252,62 @@ for k = 1:k_total
     [~, perm] = sort(Colors);
     A_perm = A(perm, perm);
     A_perm_gpu = gpuArray(A_perm);
-    b_perm_gpu = b(perm);
-    % colorView(A_perm, perm, colors, nColors, k);
-    
+
     setup.type    = 'nofill';
     setup.droptol = 0;  
-    [L, U] = ilu(A_perm, setup); % Matlab can't do ILU on GPU
+    [L, U] = ilu(A_perm, setup);
     Lg = gpuArray(L); Ug = gpuArray(U);
-    M_handle = @(x) Ug\(Lg\x);
-    % x0 = b_perm;
+
     tic;
-    [x_perm_gpu, flag, relres, iter, resvec_eo] = ...
-        gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+    for bdx = 1:num_rhs
+        b_perm_gpu = b(perm, bdx);
+        
+        M_handle = @(x) Ug\(Lg\x);
+        % x0 = b_perm;
+        
+        [x_perm_gpu, flag, relres, iter, resvec_EO] = ...
+            gmres(A_perm_gpu, b_perm_gpu, restart, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+
+        all_iterations_EO(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_relres_EO(k, bdx) = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
+        all_resvecs{bdx} = resvec_EO;
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        progress = bdx / num_rhs;
+        completed_width = round(progress * bar_width);
+        remaining_width = bar_width - completed_width;
+         % ProgressBar String
+        progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
+        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+
+        fprintf(repmat('\b', 1, last_msg_length));
+        fprintf('%s', msg);
+        last_msg_length = length(msg); 
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    end
     t_eo = toc;
-    total_iter = (iter(1)-1)*restart + iter(2);
-    relres_true_ = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
+    fprintf('\n'); 
     
+    max_iter = max(all_iterations_EO(k,:));
+    resvec_matrix = nan(max_iter, num_rhs);
+    for i = 1:num_rhs
+        current_resvec = all_resvecs{i};
+        len = length(current_resvec);
+        resvec_matrix(1:len, i) = current_resvec(:); 
+    end
+    average_resvec = mean(resvec_matrix, 2, 'omitnan');
+    
+    iters_eo(k) = mean(all_iterations_EO(k,:));
+    res_eo{k} = average_resvec;
+    nColors_EO(k) = nColors;
+
     if flag == 0
         fprintf('  When k = %d,', k);
-        fprintf('  total colors = %d\n', nColors);
-        fprintf('  the actual residual norm = %d\n', relres_true_);
-        fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres, total_iter);
-        fprintf('  GMRES cost %d sec\n\n', t_eo);   
-    else
-        fprintf('  GMRES failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
+        fprintf('  total colors = %d\n', nColors_EO(k));
+        fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k,:)));
+        fprintf('  GMRES %f iterations. in average of %g\n', iters_eo(k), num_rhs);
+        fprintf('  GMRES cost %f sec in average of %g\n', t_eo/num_rhs);
     end
-    iters_eo(k) = total_iter;
-    res_eo{k} = resvec_eo;
-    nColors_EO(k) = nColors;
 end
 % Undo permutation to original order
 % invperm(perm) = 1:length(perm);
@@ -209,12 +315,15 @@ end
 
 %% Partial ILU(0)(A) with Schur Complement
 fprintf('GMRES Schur Complement on GPU:\n')
+all_iterations_even = zeros(k_total, num_rhs);
+all_relres_even = zeros(k_total, num_rhs);
+all_resvecs = cell(1, num_rhs);
 evenCs_Schur = zeros(1, k_total);
+
 for k = 1:k_total
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
     [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
     evenCs_Schur(k) = length(unique(evenCs));
-    fprintf('For k = %g, the number of colors = %g:\n', k, ncolor);
     if ~isOK
         fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
         disp(loc{1});
@@ -224,19 +333,16 @@ for k = 1:k_total
     end
 end
 
-iters_sch = zeros(1, k_total);
+iters_schur = zeros(1, k_total);
+res_schur = cell(1, k_total);
 n = N_new;
-
-resvec_even = cell(1, k_total);
 nColors_Schur = zeros(1, k_total);
+
 for k = 1:k_total 
     [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     colors = kron(colors, B_perm);
     [~, perm] = sort(colors);
     A_perm = A(perm, perm);
-    b_perm_gpu = bg(perm);
-    % colorView(A_perm, perm, colors, nColors, k);
-
     ap_ee = A_perm(1:n/2,1:n/2);          ap_ee = gpuArray(ap_ee);
     ap_eo = A_perm(1:n/2, n/2+1:end);     ap_eo = gpuArray(ap_eo);
     ap_oe = A_perm(n/2+1:end, 1:n/2);     ap_oe = gpuArray(ap_oe);
@@ -268,13 +374,7 @@ for k = 1:k_total
 
     s_ee_gpu = @(xg)...
        ap_ee*xg - ap_eo * solve_oo_gpu(ap_oe*xg);
-
-    % Eliminate odd -> GMRES solve for even
-    bp_e_gpu = b_perm_gpu(1:n/2);
-    bp_o_gpu = b_perm_gpu(n/2+1 : end);
-    % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
-    rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
-
+    
     % === Preconditioned Handle (Left Preconditioning) === %
     setup.type    = 'nofill';
     setup.droptol = 0;  
@@ -284,60 +384,110 @@ for k = 1:k_total
     q_M = colamd(M_ee_old);
     M_ee = M_ee_old(:, q_M);
 
-    % M_ee_g = full(gpuArray(M_ee));  % NOOOO, memory boom!
-    
     % === AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt ===
     % M_ee, M_oo are pure block diagonal matrices, no zero pivot
-    [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc GMRES
-    M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
-
-    M_handle_old = @(xg) gpuArray(M_ee_old)\xg;
-    %%%%%%%%%%%%%%%%%%%%%%%%% Timers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % xg = randn(n/2,1,'gpuArray');
-    % t1 = gputimeit(@() ap_ee*xg);
-    % t2 = gputimeit(@() ap_oe*xg);
-    % t3 = timeit(@() solve_ap_oo(randn(n/2,1)));          
-    % t4 = gputimeit(@() s_ee_gpu(xg));
-    % t5 = gputimeit(@() M_handle(xg));
-    % 
-    % fprintf(['  SpMV ee: %.3f ms | SpMV oe: %.3f ms | CPU solve_oo: %.3f ms |' ...
-    %     ' S*x: %.3f ms | M*x: %.3f ms\n\n'],...
-    %         t1*1e3, t2*1e3, t3*1e3, t4*1e3, t5*1e3);
-    %%%%%%%%%%%%%%%%%%%%%%%%%% Timers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc GMRES
+    % M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
     
-    fprintf('  GMRES Start...\n');
     tic;
-    [x_even_gpu, flag, relres_even, iter_even, resvec_even{k}] = ...
-        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle); 
-    t_imp = toc;
-    
-    total_iter = (iter_even(1)-1)*restart + iter_even(2);
-    relres_even_true = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(rhs_e_gpu);
-    x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
+    for bdx = 1:num_rhs
+        b_perm_gpu = bg(perm, bdx);
+        % Eliminate odd -> GMRES solve for even
+        bp_e_gpu = b_perm_gpu(1:n/2);
+        bp_o_gpu = b_perm_gpu(n/2+1 : end);
+        % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
+        rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
 
-    iters_sch(k) = total_iter;
+        M_handle_old = @(xg) gpuArray(M_ee_old)\xg;
+        %%%%%%%%%%%%%%%%%%%%%%%%% Timers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        % xg = randn(n/2,1,'gpuArray');
+        % t1 = gputimeit(@() ap_ee*xg);
+        % t2 = gputimeit(@() ap_oe*xg);
+        % t3 = timeit(@() solve_ap_oo(randn(n/2,1)));          
+        % t4 = gputimeit(@() s_ee_gpu(xg));
+        % t5 = gputimeit(@() M_handle(xg));
+        % 
+        % fprintf(['  SpMV ee: %.3f ms | SpMV oe: %.3f ms | CPU solve_oo: %.3f ms |' ...
+        %     ' S*x: %.3f ms | M*x: %.3f ms\n\n'],...
+        %         t1*1e3, t2*1e3, t3*1e3, t4*1e3, t5*1e3);
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+        [x_even_gpu, flag, relres_even, iter, resvec_even] = ...
+            gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], M_handle_old);
+        x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
+
+        all_iterations_even(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_relres_even(k, bdx) = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(b_perm_gpu);
+        all_resvecs{bdx} = resvec_even;
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        progress = bdx / num_rhs;
+        completed_width = round(progress * bar_width);
+        remaining_width = bar_width - completed_width;
+         % ProgressBar String
+        progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
+        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+
+        fprintf(repmat('\b', 1, last_msg_length));
+        fprintf('%s', msg);
+        last_msg_length = length(msg); 
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    end
+    t_imp = toc;
+    fprintf('\n'); 
+    
+    max_iter = max(all_iterations_even(k,:));
+    resvec_matrix = nan(max_iter, num_rhs);
+    for i = 1:num_rhs
+        current_resvec = all_resvecs{i};
+        len = length(current_resvec);
+        resvec_matrix(1:len, i) = current_resvec(:); 
+    end
+    average_resvec = mean(resvec_matrix, 2, 'omitnan');
+    
+    iters_schur(k) = mean(all_iterations_EO(k,:));
+    res_schur{k} = average_resvec;
     nColors_Schur(k) = nColors;
-    fprintf('  When k = %d,', k)
-    fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even_true, total_iter);
-    fprintf('  GMRES w/ imp Schur cost %d sec\n\n', t_imp);
-     
+
+    if flag == 0
+        fprintf('  When k = %d,', k);
+        fprintf('  total colors = %d\n', nColors);
+        fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k, :)));
+        fprintf('  GMRES %f iterations. in average of %g\n', iters_schur(k), num_rhs);
+        fprintf('  GMRES cost %f sec in average of %g\n', t_imp/num_rhs);
+    end
+
     % === Combine x_even and x_odd ===
 end
 %% GMRES Schur Complement w/o preconditioner
 fprintf('GMRES Schur Complement no precondtioner:\n')
-iters_sch_no_prec = zeros(1, k_total);
-n = N_new;
+all_iters_schur_no_prec = zeros(k_total, num_rhs);
+all_relres_schur_no_prec = zeros(k_total, num_rhs);
+all_resvecs = cell(1, num_rhs);
+evenCs_schur_no_prec = zeros(1, k_total);
 
-resvec_even_no_prec = cell(1, k_total);
-nColors_Schur = zeros(1, k_total);
+for k = 1:k_total
+    [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
+    [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
+    evenCs_schur_no_prec(k) = length(unique(evenCs));
+    if ~isOK
+        fprintf('  Not compatible. Conflicting colors: '); fprintf('%d ', badCs); fprintf('\n');
+        disp(loc{1});
+        error('Aborted.')
+    else
+        fprintf('  OK: coloring is even/odd compatible.\n');
+    end
+end
+
+iters_schur_no_prec = zeros(1, k_total);
+resvec_schur_no_prec = cell(1, k_total);
+n = N_new;
+nColors_schur_no_prec = zeros(1, k_total);
+
 for k = 1:k_total 
     [colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p);
     colors = kron(colors, B_perm);
     [~, perm] = sort(colors);
     A_perm = A(perm, perm);
-    b_perm_gpu = bg(perm);
-
     ap_ee = A_perm(1:n/2,1:n/2);          ap_ee = gpuArray(ap_ee);
     ap_eo = A_perm(1:n/2, n/2+1:end);     ap_eo = gpuArray(ap_eo);
     ap_oe = A_perm(n/2+1:end, 1:n/2);     ap_oe = gpuArray(ap_oe);
@@ -349,44 +499,79 @@ for k = 1:k_total
     s_ee_gpu = @(xg)...
        ap_ee*xg - ap_eo * solve_oo_gpu(ap_oe*xg);
 
-    % Eliminate odd -> GMRES solve for even
-    bp_e_gpu = b_perm_gpu(1:n/2);
-    bp_o_gpu = b_perm_gpu(n/2+1 : end);
-    % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
-    rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
-
-    fprintf('  GMRES Start...\n');
     tic;
-    [x_even_gpu, flag, relres_even_no, iter_even, resvec_even_no_prec{k}] = ...
-        gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], []); 
-    t_imp = toc;
+    for bdx = 1:num_rhs
+        b_perm_gpu = bg(perm, bdx);
+        % Eliminate odd -> GMRES solve for even
+        bp_e_gpu = b_perm_gpu(1:n/2);
+        bp_o_gpu = b_perm_gpu(n/2+1 : end);
+        % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
+        rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
 
-    total_iter = (iter_even(1)-1)*restart + iter_even(2);
-    x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
-    relres_even_no_true = norm(rhs_e_gpu - s_ee_gpu(x_even_gpu))/norm(rhs_e_gpu);
-    iters_sch_no_prec(k) = total_iter;
-    nColors_Schur(k) = nColors;
+        [x_schur_no_prec_gpu, flag, relres_even, iter, resvec_even] = ...
+            gmres(s_ee_gpu, rhs_e_gpu, restart, tol, maxit, [], []);
+        x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_schur_no_prec_gpu);
 
-    fprintf('  When k = %d,', k)
-    fprintf('  Total colors = %d.\n', nColors);
-    fprintf('  GMRES projection relative residual %e in %d iterations.\n', relres_even_no_true, total_iter);
-    fprintf('  GMRES w/ imp Schur cost %d sec\n\n', t_imp);
-     
-    % Combine x_even and x_odd
+        all_iters_schur_no_prec(k, bdx) = (iter(1)-1)*restart + iter(2);
+        all_relres_schur_no_prec(k, bdx) = norm(rhs_e_gpu - s_ee_gpu(x_schur_no_prec_gpu))/norm(b_perm_gpu);
+        all_resvecs{bdx} = resvec_even;
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        progress = bdx / num_rhs;
+        completed_width = round(progress * bar_width);
+        remaining_width = bar_width - completed_width;
+         % ProgressBar String
+        progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
+        msg = sprintf('GMRES Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+
+        fprintf(repmat('\b', 1, last_msg_length));
+        fprintf('%s', msg);
+        last_msg_length = length(msg); 
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    end
+    t_schur_no_prec = toc;
+    fprintf('\n'); 
+    
+    max_iter = max(all_iters_schur_no_prec(k,:));
+    resvec_matrix = nan(max_iter, num_rhs);
+    for i = 1:num_rhs
+        current_resvec = all_resvecs{i};
+        len = length(current_resvec);
+        resvec_matrix(1:len, i) = current_resvec(:); 
+    end
+    average_resvec = mean(resvec_matrix, 2, 'omitnan');
+    
+    iters_schur_no_prec(k) = mean(all_iters_schur_no_prec(k,:));
+    resvec_schur_no_prec{k} = average_resvec;
+    nColors_schur_no_prec(k) = nColors;
+
+    if flag == 0
+        fprintf('  When k = %d,', k);
+        fprintf('  total colors = %d\n', nColors);
+        fprintf('  The average exact residual norm = %d\n', mean(all_relres_schur_no_prec(k, :)));
+        fprintf('  GMRES %f iterations. in average of %g\n', iters_schur_no_prec(k), num_rhs);
+        fprintf('  GMRES cost %f sec in average of %g\n', t_schur_no_prec/num_rhs);
+    end
+
+    % === Combine x_even and x_odd ===
 end
-
-%% Plot all Convergence
+%% Plot all Convergence TODO
 figure; 
 for k = 1:k_total
-
     semilogy(res_noEO{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
     semilogy(res_eo{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
     
-    semilogy(resvec_even_no_prec{k}, 'LineWidth', 2, 'DisplayName', sprintf('w/ EO, no ilu(0), k = %d', k));
-    semilogy(resvec_even{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('w/ EO, k = %d', k));
-    hold on;
+    semilogy(resvec_even{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Schur, k = %d', k));
+    semilogy(resvec_schur_no_prec{k}, 'LineWidth', 2, 'DisplayName', sprintf('Schur, no prep., k = %d', k));
 end
-semilogy(resvec_GMRES,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('GMRES'));
+xlabel('Iteration');
+ylabel('Residual Norm');
+yline(tol,'r--','DisplayName', sprintf('Tol'));
+title('Schur Comp. GMRES Residual Convergence with EO');
+legend show;
+grid on;
+
+figure; clf;
+semilogy(resvec_pure,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('GMRES'));
 semilogy(resvec_ilu0,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('ILU(0) Natural'));
 
 xlabel('Iteration');
@@ -398,7 +583,7 @@ grid on;
 %%
 figure; subplot(1,2,1);
 X = 1:k_total;
-Y = [iters(:), iters_eo(:), iters_sch(:), iters_sch_no_prec(:)];
+Y = [iters(:), iters_eo(:), iters_schur(:), iters_sch_no_prec(:)];
 total_colors = [nColors_noEO(:), nColors_EO(:), nColors_Schur(:), nColors_Schur(:)];
 even_colors = [evenCs_noEO(:), evenCs_EO(:), evenCs_Schur(:), evenCs_Schur(:)];
 bar(X, Y, 'grouped'); hold on;

@@ -32,8 +32,8 @@ natOrder(eoPerms) = 1:N;   % Nature Ordering Map
 % Get the neighbors that distance <= k
 offs = Create_Stencil(zeros(1,d),k,p,1);
 
-maxColorEven = 0; % To ensure same color has same oddity
-for t = 1:N       % Natural ordering greedy coloring
+maxColorEven = 0;          % To ensure same color has same oddity (parity)
+for t = 1:N                % Natural ordering greedy coloring
     idx = eoPerms(t);
     coords = cell(1,d);
     [coords{:}] = ind2sub(D, idx);
