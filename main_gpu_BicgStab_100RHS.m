@@ -627,7 +627,7 @@ legend('Without EO', 'With EO', 'Schur Comp.', 'Schur Comp. w/o ILU(0)', 'Locati
 p_str = strtrim(sprintf('%g ', p));
 title(sprintf('Number of Even Colors vs. k,  Disp = [%s]', p_str));
 grid on;
-exportgraphics(fig, 'BiCGstab.pdf', 'ContentType', 'vector');
+exportgraphics(fig4, 'BiCGstab.pdf', 'ContentType', 'vector');
 close(fig4)
 %%
 function colorView(A, order, colors, nColors, k)
