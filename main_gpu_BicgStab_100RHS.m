@@ -218,7 +218,6 @@ for k = 1:k_total
     
 end
 %% Multi-reordering with Even-Odd Reordering
-reset(gpuDevice);
 fprintf('Check the EO and Coloring compatibility first...:\n')
 all_iterations_EO = zeros(k_total, num_rhs);
 all_relres_EO = zeros(k_total, num_rhs);
@@ -319,7 +318,7 @@ all_relres_even = zeros(k_total, num_rhs);
 all_resvecs = cell(1, num_rhs);
 evenCs_Schur = zeros(1, k_total);
 
-for k = 1:1
+for k = 1:k_total
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
     [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
     evenCs_Schur(k) = length(unique(evenCs));
@@ -389,7 +388,7 @@ for k = 1:k_total
     % M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
     
     tic;
-    for bdx = 1:num_rhs
+    for bdx = 1:1
         b_perm_gpu = bg(perm, bdx);
         % Eliminate odd -> bicgstab solve for even
         bp_e_gpu = b_perm_gpu(1:n/2);
@@ -443,14 +442,14 @@ for k = 1:k_total
     end
     average_resvec = mean(resvec_matrix, 2, 'omitnan');
     
-    iters_schur(k) = mean(all_iterations_EO(k,:));
+    iters_schur(k) = mean(all_iterations_even(k,:));
     res_schur{k} = average_resvec;
     nColors_Schur(k) = nColors;
 
     if flag == 0
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
-        fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k, :)));
+        fprintf('  The average exact residual norm = %d\n', mean(all_relres_even(k, :)));
         fprintf('  bicgstab %f iterations. in average of %g\n', iters_schur(k), num_rhs);
         fprintf('  bicgstab cost %f sec in average of %g\n', t_imp/num_rhs);
     end

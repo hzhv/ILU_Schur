@@ -223,6 +223,7 @@ for k = 1:k_total
     
 end
 %% Multi-reordering with Even-Odd Reordering
+
 reset(gpuDevice);
 fprintf('Check the EO and Coloring compatibility first...:\n')
 all_iterations_EO = zeros(k_total, num_rhs);
@@ -317,7 +318,6 @@ end
 % x = x_perm(invperm);
 
 %% Partial ILU(0)(A) with Schur Complement
-
 fprintf('GMRES Schur Complement on GPU:\n')
 all_iterations_even = zeros(k_total, num_rhs);
 all_relres_even = zeros(k_total, num_rhs);
@@ -448,14 +448,14 @@ for k = 1:k_total
     end
     average_resvec = mean(resvec_matrix, 2, 'omitnan');
     
-    iters_schur(k) = mean(all_iterations_EO(k,:));
+    iters_schur(k) = mean(all_iterations_even(k,:));
     res_schur{k} = average_resvec;
     nColors_Schur(k) = nColors;
 
     if flag == 0
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
-        fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k, :)));
+        fprintf('  The average exact residual norm = %d\n', mean(all_relres_even(k, :)));
         fprintf('  GMRES %f iterations. in average of %g\n', iters_schur(k), num_rhs);
         fprintf('  GMRES cost %f sec in average of %g\n', t_imp/num_rhs);
     end
