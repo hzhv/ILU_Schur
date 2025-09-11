@@ -567,7 +567,7 @@ ylabel('Residual Norm');
 title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
-exportgraphics(fig1, 'BiCGStab_Schur_RHS100.pdf', 'Resolution', 300);
+exportgraphics(fig1, 'BiCGStab_Schur_RHS100.pdf', 'ContentType', 'vector');
 close(fig1);
 
 fig2 = figure('Visible', 'off');
@@ -583,7 +583,7 @@ ylabel('Residual Norm');
 title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
-exportgraphics(fig2, 'BiCGStab_Color_RHS100.pdf', 'Resolution', 300);
+exportgraphics(fig2, 'BiCGStab_Color_RHS100.pdf', 'ContentType', 'vector');
 close(fig2);
 
 fig3 = figure('Visible', 'off');
@@ -597,10 +597,11 @@ ylabel('Residual Norm');
 title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
-exportgraphics(fig3, 'BiCGStab.pdf', 'Resolution', 300);
+exportgraphics(fig3, 'BiCGStab_ilu(0)_RHS100.pdf', 'ContentType', 'vector');
 close(fig3);
 %%
-figure; subplot(1,2,1);
+fig4 = figure('Visible', 'off'); 
+subplot(1,2,1);
 X = 1:k_total;
 Y = [iters(:), iters_eo(:), iters_schur(:), iters_schur_no_prec(:)];
 total_colors = [nColors_noEO(:), nColors_EO(:), nColors_Schur(:), nColors_Schur(:)];
@@ -626,7 +627,8 @@ legend('Without EO', 'With EO', 'Schur Comp.', 'Schur Comp. w/o ILU(0)', 'Locati
 p_str = strtrim(sprintf('%g ', p));
 title(sprintf('Number of Even Colors vs. k,  Disp = [%s]', p_str));
 grid on;
-
+exportgraphics(fig, 'BiCGstab.pdf', 'ContentType', 'vector');
+close(fig4)
 %%
 function colorView(A, order, colors, nColors, k)
 figure;
