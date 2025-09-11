@@ -37,7 +37,7 @@ bg = gpuArray(b);
 fprintf('Pure bicgstabl:');
 tic;
 [x_perm_gpu, flag, relres, iters, resvec_bicgstabl] = ...
-    bicgstabl(Ag, bg, tol, maxit, [], []);
+    bicgstab(Ag, bg, tol, maxit, [], []);
 t_bicgstabl = toc;
 
 fprintf('  bicgstabl projection relative residual %e in %d iterations.\n', relres, iters);

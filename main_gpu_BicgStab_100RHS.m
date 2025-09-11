@@ -61,7 +61,7 @@ tic;
 fprintf('Pure iterative results w/o any preconditioner:\n');
 for bdx = 1:num_rhs
     [xg, flag, relres, iter, resvec_pure] = ... % 
-        bicgstabl(Ag, bg(:,bdx), tol, maxit, [], []);
+        bicgstab(Ag, bg(:,bdx), tol, maxit, [], []);
     total_iter_pure = iter;
     relres_true = norm(bg(:,bdx) - Ag*xg)/norm(bg(:,bdx));
     all_iterations(bdx) = total_iter_pure; 
@@ -72,7 +72,7 @@ for bdx = 1:num_rhs
     remaining_width = bar_width - completed_width;
      % ProgressBar String
     progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-    msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
+    msg = sprintf('bicgstab Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
    
     fprintf(repmat('\b', 1, last_msg_length));
     fprintf('%s', msg);
@@ -83,8 +83,8 @@ tp = toc;
 
 ave_iter_pure = mean(all_iterations);
 fprintf('  The average exact residual norm = %d\n', mean(all_relres));
-fprintf('  bicgstabl %f iterations. in average of %g\n', ave_iter_pure, num_rhs);
-fprintf('  bicgstabl cost %f sec in average of %g\n', tp/num_rhs, num_rhs);
+fprintf('  bicgstab %f iterations. in average of %g\n', ave_iter_pure, num_rhs);
+fprintf('  bicgstab cost %f sec in average of %g\n', tp/num_rhs, num_rhs);
 %% Use ILU(0) Preconditioner Only
 all_iterations_ilu0 = zeros(1, num_rhs);
 all_relres_ilu0 = zeros(1, num_rhs);
@@ -99,7 +99,7 @@ tic;
 for bdx = 1:num_rhs
     M_handle = @(x) Ug\(Lg\x); % Handle in loop
     [x_perm_gpu, flag, relres, iter, resvec_ilu0] = ...
-        bicgstabl(Ag, bg(:, bdx), tol, maxit, [], M_handle);
+        bicgstab(Ag, bg(:, bdx), tol, maxit, [], M_handle);
     
     total_iter = iter;
     relres_true = norm(bg(:,bdx) - Ag*x_perm_gpu)/norm(bg(:,bdx));
@@ -112,7 +112,7 @@ for bdx = 1:num_rhs
     remaining_width = bar_width - completed_width;
      % ProgressBar String
     progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-    msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
+    msg = sprintf('bicgstab Start... %s %.1f%% (%d/%d)\n', progress_bar, progress * 100, bdx, num_rhs);
    
     fprintf(repmat('\b', 1, last_msg_length));
     fprintf('%s', msg);
@@ -123,8 +123,8 @@ t_ilu = toc;
 
 ave_iter_ilu0 = mean(all_iterations_ilu0);
 fprintf('  The average exact residual norm = %d\n', mean(all_relres_ilu0));
-fprintf('  bicgstabl %f iterations. in average of %g\n', mean(all_iterations_ilu0), num_rhs);
-fprintf('  bicgstabl cost %f sec in average of %g\n', t_ilu/num_rhs, num_rhs);
+fprintf('  bicgstab %f iterations. in average of %g\n', mean(all_iterations_ilu0), num_rhs);
+fprintf('  bicgstab cost %f sec in average of %g\n', t_ilu/num_rhs, num_rhs);
 %% Use muticoloring only without Even-Odd ordering
 
 fprintf('Only multi-coloring w/o Even-Odd:\n');
@@ -171,7 +171,7 @@ for k = 1:k_total
         M_handle = @(x) Ug\(Lg\x);
       
         [x_perm_gpu, flag, relres, iter, resvec_noEO] = ...
-            bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
+            bicgstab(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle);
         
         all_iterations_noEO(k, bdx) = iter;
         all_relres_noEO(k, bdx) = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
@@ -183,7 +183,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstab Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -193,7 +193,7 @@ for k = 1:k_total
     t_noEO = toc;
     fprintf('\n'); 
     
-    max_iter = max(all_iterations_noEO(k,:));
+    max_iter = ceil(max(all_iterations_noEO(k,:)));
     resvec_matrix = nan(max_iter, num_rhs);
     for i = 1:num_rhs
         current_resvec = all_resvecs{i};
@@ -210,10 +210,10 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors_noEO(k));
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_noEO(k,:)));
-        fprintf('  bicgstabl %f iterations. in average of %g\n', iters(k), num_rhs);
-        fprintf('  bicgstabl cost %f sec in average of %g\n', t_noEO/num_rhs);
+        fprintf('  bicgstab %f iterations. in average of %g\n', iters(k), num_rhs);
+        fprintf('  bicgstab cost %f sec in average of %g\n', t_noEO/num_rhs);
     else
-        fprintf('  bicgstabl failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
+        fprintf('  bicgstab failed to converge (flag = %d). Relative residual = %e.\n', flag, relres);
     end
     
 end
@@ -264,7 +264,7 @@ for k = 1:k_total
         % x0 = b_perm;
         
         [x_perm_gpu, flag, relres, iter, resvec_EO] = ...
-            bicgstabl(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
+            bicgstab(A_perm_gpu, b_perm_gpu, tol, maxit, [], M_handle); % M1=Lg? M2=Ug?
 
         all_iterations_EO(k, bdx) = iter;
         all_relres_EO(k, bdx) = norm(b_perm_gpu - A_perm_gpu*x_perm_gpu)/norm(b_perm_gpu);
@@ -276,7 +276,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstab Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -286,7 +286,7 @@ for k = 1:k_total
     t_eo = toc;
     fprintf('\n'); 
     
-    max_iter = max(all_iterations_EO(k,:));
+    max_iter = ceil(max(all_iterations_EO(k,:)));
     resvec_matrix = nan(max_iter, num_rhs);
     for i = 1:num_rhs
         current_resvec = all_resvecs{i};
@@ -303,8 +303,8 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors_EO(k));
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k,:)));
-        fprintf('  bicgstabl %f iterations. in average of %g\n', iters_eo(k), num_rhs);
-        fprintf('  bicgstabl cost %f sec in average of %g\n', t_eo/num_rhs);
+        fprintf('  bicgstab %f iterations. in average of %g\n', iters_eo(k), num_rhs);
+        fprintf('  bicgstab cost %f sec in average of %g\n', t_eo/num_rhs);
     end
 end
 % Undo permutation to original order
@@ -313,13 +313,13 @@ end
 
 %% Partial ILU(0)(A) with Schur Complement
 
-fprintf('bicgstabl Schur Complement on GPU:\n')
+fprintf('bicgstab Schur Complement on GPU:\n')
 all_iterations_even = zeros(k_total, num_rhs);
 all_relres_even = zeros(k_total, num_rhs);
 all_resvecs = cell(1, num_rhs);
 evenCs_Schur = zeros(1, k_total);
 
-for k = 1:k_total
+for k = 1:1
     [Colors, ncolor] = displacement_even_odd_coloring_nD_lattice(D, k, [0 0 0 0]);
     [isOK, evenCs, badCs, loc] = check_eo_compatibility_and_return_even(Colors, D, N_new);
     evenCs_Schur(k) = length(unique(evenCs));
@@ -385,13 +385,13 @@ for k = 1:k_total
 
     % === AK(K^{-1}x)=y (Right Precondtioning) -> AKt=y -> x=Kt ===
     % M_ee, M_oo are pure block diagonal matrices, no zero pivot
-    % [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc bicgstabl
+    % [LM_ee, UM_ee] = lu(M_ee);  % intro fill-ins but acc bicgstab
     % M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
     
     tic;
     for bdx = 1:num_rhs
         b_perm_gpu = bg(perm, bdx);
-        % Eliminate odd -> bicgstabl solve for even
+        % Eliminate odd -> bicgstab solve for even
         bp_e_gpu = b_perm_gpu(1:n/2);
         bp_o_gpu = b_perm_gpu(n/2+1 : end);
         % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
@@ -412,7 +412,7 @@ for k = 1:k_total
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
         [x_even_gpu, flag, relres_even, iter, resvec_even] = ...
-            bicgstabl(s_ee_gpu, rhs_e_gpu, tol, maxit, [], M_handle_old);
+            bicgstab(s_ee_gpu, rhs_e_gpu, tol, maxit, [], M_handle_old);
         x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_even_gpu);
 
         all_iterations_even(k, bdx) = iter;
@@ -424,7 +424,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstab Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -434,7 +434,7 @@ for k = 1:k_total
     t_imp = toc;
     fprintf('\n'); 
     
-    max_iter = max(all_iterations_even(k,:));
+    max_iter = ceil(max(all_iterations_even(k,:)));
     resvec_matrix = nan(max_iter, num_rhs);
     for i = 1:num_rhs
         current_resvec = all_resvecs{i};
@@ -451,15 +451,15 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_EO(k, :)));
-        fprintf('  bicgstabl %f iterations. in average of %g\n', iters_schur(k), num_rhs);
-        fprintf('  bicgstabl cost %f sec in average of %g\n', t_imp/num_rhs);
+        fprintf('  bicgstab %f iterations. in average of %g\n', iters_schur(k), num_rhs);
+        fprintf('  bicgstab cost %f sec in average of %g\n', t_imp/num_rhs);
     end
 
     % === Combine x_even and x_odd ===
 end
-%% bicgstabl Schur Complement w/o preconditioner
+%% bicgstab Schur Complement w/o preconditioner
 
-fprintf('bicgstabl Schur Complement no precondtioner:\n')
+fprintf('bicgstab Schur Complement no precondtioner:\n')
 all_iters_schur_no_prec = zeros(k_total, num_rhs);
 all_relres_schur_no_prec = zeros(k_total, num_rhs);
 all_resvecs = cell(1, num_rhs);
@@ -502,14 +502,14 @@ for k = 1:k_total
     tic;
     for bdx = 1:num_rhs
         b_perm_gpu = bg(perm, bdx);
-        % Eliminate odd -> bicgstabl solve for even
+        % Eliminate odd -> bicgstab solve for even
         bp_e_gpu = b_perm_gpu(1:n/2);
         bp_o_gpu = b_perm_gpu(n/2+1 : end);
         % rhs_o = bp_o - ap_oe * (ap_ee \ bp_e);
         rhs_e_gpu = bp_e_gpu - ap_eo * solve_oo_gpu(bp_o_gpu);
 
         [x_schur_no_prec_gpu, flag, relres_even, iter, resvec_even] = ...
-            bicgstabl(s_ee_gpu, rhs_e_gpu, tol, maxit, [], []);
+            bicgstab(s_ee_gpu, rhs_e_gpu, tol, maxit, [], []);
         x_odd = ap_oo \ (bp_o_gpu - ap_oe * x_schur_no_prec_gpu);
 
         all_iters_schur_no_prec(k, bdx) = iter;
@@ -521,7 +521,7 @@ for k = 1:k_total
         remaining_width = bar_width - completed_width;
          % ProgressBar String
         progress_bar = ['[' repmat('=', 1, completed_width) repmat(' ', 1, remaining_width) ']'];
-        msg = sprintf('bicgstabl Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
+        msg = sprintf('bicgstab Start... %s %.1f%% (%d/%d)', progress_bar, progress * 100, bdx, num_rhs);
 
         fprintf(repmat('\b', 1, last_msg_length));
         fprintf('%s', msg);
@@ -531,7 +531,7 @@ for k = 1:k_total
     t_schur_no_prec = toc;
     fprintf('\n'); 
     
-    max_iter = max(all_iters_schur_no_prec(k,:));
+    max_iter = ceil(max(all_iters_schur_no_prec(k,:)));
     resvec_matrix = nan(max_iter, num_rhs);
     for i = 1:num_rhs
         current_resvec = all_resvecs{i};
@@ -548,8 +548,8 @@ for k = 1:k_total
         fprintf('  When k = %d,', k);
         fprintf('  total colors = %d\n', nColors);
         fprintf('  The average exact residual norm = %d\n', mean(all_relres_schur_no_prec(k, :)));
-        fprintf('  bicgstabl %f iterations. in average of %g\n', iters_schur_no_prec(k), num_rhs);
-        fprintf('  bicgstabl cost %f sec in average of %g\n', t_schur_no_prec/num_rhs);
+        fprintf('  bicgstab %f iterations. in average of %g\n', iters_schur_no_prec(k), num_rhs);
+        fprintf('  bicgstab cost %f sec in average of %g\n', t_schur_no_prec/num_rhs);
     end
 
     % === Combine x_even and x_odd ===
@@ -565,7 +565,7 @@ end
 xlabel('Iteration');
 ylabel('Residual Norm');
 % yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. bicgstabl Residual Convergence with EO');
+title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
 
@@ -579,19 +579,19 @@ end
 xlabel('Iteration');
 ylabel('Residual Norm');
 % yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. bicgstabl Residual Convergence with EO');
+title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
 
 figure; clf;
-semilogy(resvec_pure,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Pure bicgstabl'));
+semilogy(resvec_pure,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Pure bicgstab'));
 hold on;
 semilogy(resvec_ilu0,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('ILU(0) Natural'));
 
 xlabel('Iteration');
 ylabel('Residual Norm');
 % yline(tol,'r--','DisplayName', sprintf('Tol'));
-title('Schur Comp. bicgstabl Residual Convergence with EO');
+title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
 %%
@@ -603,13 +603,13 @@ even_colors = [evenCs_noEO(:), evenCs_EO(:), evenCs_Schur(:), evenCs_schur_no_pr
 
 bar(X, Y, 'grouped'); hold on;
 
-yline(ave_iter_pure, '--r', 'Pure bicgstabl', 'LineWidth', 2);
+yline(ave_iter_pure, '--r', 'Pure bicgstab', 'LineWidth', 2);
 yline(ave_iter_ilu0, '--b', 'ILU(0) Natural', 'LineWidth', 2);
 
 xlabel('k');
-ylabel('bicgstabl Iterations');
-legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure bicgstabl','ILU(0) Natural','Location','northwest');
-title('bicgstabl Iterations vs. k');
+ylabel('bicgstab Iterations');
+legend('Without EO','With EO','Schur Comp.', 'Schur Comp. w/o ILU(0)','Pure bicgstab','ILU(0) Natural','Location','northwest');
+title('bicgstab Iterations vs. k');
 grid on;
 
 subplot(1,2,2);
