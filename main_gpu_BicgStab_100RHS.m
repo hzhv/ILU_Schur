@@ -388,7 +388,7 @@ for k = 1:k_total
     % M_handle = @(xg) gpuArray(UM_ee\(LM_ee\gather(xg))); % acc 100% in sec  
     
     tic;
-    for bdx = 1:1
+    for bdx = 1:num_rhs
         b_perm_gpu = bg(perm, bdx);
         % Eliminate odd -> bicgstab solve for even
         bp_e_gpu = b_perm_gpu(1:n/2);
@@ -554,7 +554,7 @@ for k = 1:k_total
     % === Combine x_even and x_odd ===
 end
 %% Plot all Convergence
-figure;
+fig1 = figure('Visible', 'off');
 for k = 1:k_total
     semilogy(res_schur{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Schur, k = %d', k));
     hold on;
@@ -567,8 +567,10 @@ ylabel('Residual Norm');
 title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
+exportgraphics(fig1, 'BiCGStab_Schur_RHS100.pdf', 'Resolution', 300);
+close(fig1);
 
-figure; clf;
+fig2 = figure('Visible', 'off');
 for k = 1:k_total
     semilogy(res_noEO{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
     hold on;
@@ -581,8 +583,10 @@ ylabel('Residual Norm');
 title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
+exportgraphics(fig2, 'BiCGStab_Color_RHS100.pdf', 'Resolution', 300);
+close(fig2);
 
-figure; clf;
+fig3 = figure('Visible', 'off');
 semilogy(resvec_pure,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Pure bicgstab'));
 hold on;
 semilogy(resvec_ilu0,'-', 'LineWidth', 1.2, 'DisplayName', sprintf('ILU(0) Natural'));
@@ -593,6 +597,8 @@ ylabel('Residual Norm');
 title('Schur Comp. bicgstab Residual Convergence with EO');
 legend show;
 grid on;
+exportgraphics(fig3, 'BiCGStab.pdf', 'Resolution', 300);
+close(fig3);
 %%
 figure; subplot(1,2,1);
 X = 1:k_total;
