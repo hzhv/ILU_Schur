@@ -164,7 +164,7 @@ for k = 1:k_total
     
     setup.type    = 'nofill';
     setup.droptol = 0;  
-    [L, U] = ilu(A_perm, setup); % Matlab can't do ILU on GPU
+    [L, U] = ilu(A_perm, setup);    % Matlab can't do ILU on GPU
     Lg = gpuArray(L); Ug = gpuArray(U);
     
     tic;
@@ -564,7 +564,7 @@ figure;
 for k = 1:k_total
     semilogy(res_schur{k},'-', 'LineWidth', 1.2, 'DisplayName', sprintf('Schur, k = %d', k));
     hold on;
-    semilogy(resvec_schur_no_prec{k}, 'LineWidth', 2, 'DisplayName', sprintf('Schur, no prep., k = %d', k));
+    semilogy(resvec_schur_no_prec{k}, '--', 'LineWidth', 1.3, 'DisplayName', sprintf('Schur, no prep., k = %d', k));
     hold on;
 end
 xlabel('Iteration');
@@ -573,7 +573,7 @@ ylabel('Residual Norm');
 title('Schur Comp. GMRES Residual Convergence with EO');
 legend show;
 grid on;
-
+%%
 figure; clf;
 for k = 1:k_total
     semilogy(res_noEO{k},'--' ,'LineWidth', 1.2, 'DisplayName', sprintf('w/o EO, k = %d', k));
