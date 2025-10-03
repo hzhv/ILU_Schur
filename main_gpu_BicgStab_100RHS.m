@@ -27,16 +27,22 @@ p=[0 0 0 0];
 k_total=3;
 tol=1e-2; % coarse operator
 
-% === Sparse System ===
-D = [4 4 4 8];            % from read_coarse.m  
-A = load('A.mat').A; 
-bs = 64;                  % block size of each "block" in diagonal
+% === Sparse Operator ===
+% === Level 2 ===
+% D = [4 4 4 8];            % from read_coarse.m  
+% A = load('A.mat').A; 
+% bs = 64;                  % block size of each "block" in diagonal
 
-% D = [8 8 8 16];
-% A = lap_kD_periodic(D,1);  
-% A = kron(A, ones(bs));    % For denser "boxed" diag
-% A = A + speye(size(A,1))*1e-2;  % make it non-singular
-% bs = 48;
+% b = load('rhs.mat').b;
+% b = load('rhs_level2.mat').x; % 32768x10
+% num_rhs = size(b, 2);
+
+% === Level 1 ===
+D = [8 8 8 16];
+bs = 48;
+A = lap_kD_periodic(D,1);  
+A = kron(A, ones(bs));      % For denser "boxed" diag
+A = A + speye(size(A,1))*1e-2;  % make it non-singular
 
 B_perm = ones(bs,1);        % for Kron(A, B)
 N_new = size(A,1);
@@ -45,20 +51,25 @@ Ag = gpuArray(A);
 %%A = A.*(1+rand(N,N)/10) + speye(N)*1e-7;
 % figure; spy(A); title("Original A");
 
-% ======= RHS ========
-% b = load('rhs.mat').b;
-b = load('rhs_level2.mat').x; % 32768x10
-num_rhs = size(b, 2);
-% b = (1:N_new)';
-% b = rand(N_new,10);
+b = (1:N_new)'; num_rhs = 1;
+% %b = rand(N_new,10);
 bg = gpuArray(b);
 
+%% Test Matrix Vector Multiplication on GPU
+x1 = eye(N_new,1);
+x1g = gpuArray(x1);
+tic; y1 = A*x1;                   % CPU
+t1 = toc;
+tic; y2 = Ag*x1g;                 % GPU
+t2 = toc;
+fprintf('SpMV on CPU cost %f sec, on GPU cost %f sec.\n', t1, t2);
 % x0 = b;
-%% "Pure BiCGstab Iterations"
+
+%% Unpreconditioned bicgstab
 all_iterations = zeros(1, num_rhs);
 all_relres = zeros(1, num_rhs);
-tic;
 fprintf('Pure iterative results w/o any preconditioner:\n');
+tic;
 for bdx = 1:num_rhs
     [xg, flag, relres, iter, resvec_pure] = ... % 
         bicgstab(Ag, bg(:,bdx), tol, maxit, [], []);
@@ -95,17 +106,18 @@ setup.droptol = 0;
 [L, U] = ilu(A, setup);        % Matlab can't do ILU on GPU
 Lg = gpuArray(L); Ug = gpuArray(U);
 
-tic;
+% tic;p
 for bdx = 1:num_rhs
     M_handle = @(x) Ug\(Lg\x); % Handle in loop
+    tic;
     [x_perm_gpu, flag, relres, iter, resvec_ilu0] = ...
         bicgstab(Ag, bg(:, bdx), tol, maxit, [], M_handle);
+    t_ilu = toc;
     
     total_iter = iter;
     relres_true = norm(bg(:,bdx) - Ag*x_perm_gpu)/norm(bg(:,bdx));
     all_iterations_ilu0(bdx) = total_iter; 
     all_relres_ilu0(bdx) = relres_true;
-    
     %%%%%%%%%%%%%%%%%%%%%%%%%%%% ProgressBar %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     progress = bdx / num_rhs;
     completed_width = round(progress * bar_width);
@@ -119,7 +131,7 @@ for bdx = 1:num_rhs
     last_msg_length = length(msg); 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
-t_ilu = toc;
+% t_ilu = toc;
 
 ave_iter_ilu0 = mean(all_iterations_ilu0);
 fprintf('  The average exact residual norm = %d\n', mean(all_relres_ilu0));
