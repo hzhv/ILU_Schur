@@ -1,13 +1,18 @@
-function [x, flag, relres, iters, resvec] = min_res_sd(a, b, tol, maxit, M1, M2)
-iters = 0;
+function [x, flag, relres, iters, resvec] = min_res_sd(a, b, tol, maxit, M1, M2, x0)
 n = size(a,1);
-x = zeros(n,1);
-r = b - a*x;
-resvec = [norm(r)];
+if nargin < 7 || isempty(x0)
+    x = zeros(n, 1);
+else
+    x = x0;
+end
 
-if nargin < 6 || isempty(M2)
+if isempty(M2)
     M2 = @(v) v; 
 end
+
+iters = 0;
+r = b - a*x;
+resvec = [norm(r)];
 
 while norm(r)/norm(b) > tol
     kr = M2(r);     % kr = precond * r
