@@ -1,11 +1,6 @@
-%% Note these tests only for plotting
+function test_MG
+% Note these tests only for plotting
 
-% u = 1:max(iters)
-% interp1(iters, resvec, [1:max(iters)], 'linear');
-% trunc by minimum 
-
-
-clear; clc; close all;
 % n = 100;
 % rng("default")
 % A = rand(n);
@@ -15,8 +10,8 @@ clear; clc; close all;
 A = load('./A_level2.mat').A;
 n = size(A,1);
 rhs = load('./rhs_level2.mat').x;
-% rhs = rhs(:,1); %% try more rhs plz
-% [v, d] = getEigs(A, 200, 0.01, 1000);
+m = 100;
+rhs = rhs(:,1:m); %% try more rhs plz
 
 setup.type    = 'nofill';
 setup.droptol = 0;  
@@ -28,50 +23,47 @@ tol_outer = 1e-2; maxit_outer = 30;
 
 lb = {};
 index = 1;
-eigs200 = load("eigs200_1e1_1000.mat").eigCell;
-%%
-v = extractEigs(eigs200, 1);
+load("eigs200.mat");
+
+v = extractEigs(eigs200, 100);
+% v = v.*(1+0.1*complex(randn(n,100),randn(n,100)));
 v = orth(v);
 
-test_unprec( ...
+f = figure;
+test_mgd( ...
     A, rhs, v, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'bicgstab');
 lb{index} = "bicgstab unprec";
 index = index + 1;
 
-test_unprec( ...
+test_mgd( ...
     A, rhs, v, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
 lb{index} = "min res unprec";
 index = index + 1;
 
-test_unprec( ...
+test_mgd( ...
     A, rhs, v, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2, M_smo_ilu0, 'bicgstab');
 lb{index} = "bicgstab ilu0";
 index = index + 1;
 
-test_unprec( ...
+test_mgd( ...
     A, rhs, v, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2, M_smo_ilu0, 'min');
 lb{index} = "min res ilu0";
 index = index + 1;
 
-
 % [sol_x, res_inner, inner_iter_vec, resvec_outer, total_iters] = MG_deflation(A, rhs, v, ...
-%     tol_inner, maxit_inner, tol_outer, maxit_outer, 0, M_smo_ilu0, 'bicgstab');
-% semilogy(0:length(resvec_outer)-1, resvec_outer, '-o'); hold on;
-% lb{index} = "bicgstab unprec";
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     1, M_smo_ilu0, 'min');
+% plotMGD(inner_iter_vec,resvec_outer, 'min'); hold on;
+% lb{index} = "min res, k=100";
 % index = index + 1;
-
-% =================================================================================================================
-% k = 100
-v = extractEigs(eigs200, 100);
-v = orth(v);
 
 test_mgd(...
     A, rhs, v, ...
@@ -103,7 +95,16 @@ index = index + 1;
 
 grid on;
 legend(lb);
-%% Plot Eigen Values
+xlabel('Cumulative inner iterations');
+ylabel('residual norm (resvec)');
+title(sprintf('Average of %d runs (geom. mean)', m));
+
+savefig(f, 'MG_test_avg.fig');
+saveas(f, 'MG_test_avg.pdf');
+
+end
+%% Plot Eig Values
+function plot_eigValues
 load("eigs200.mat");
 
 d_200 = sqrt(sort(abs(diag(eigs200{2})), "descend"))/sqrt(max(abs(diag(eigs200{2}))));
@@ -112,7 +113,7 @@ semilogy(d_200); grid on;
 title("Eigenvalue Magnitude Decay");
 xlabel("Magnitude Descend");
 ylabel("|Eig Val|")
-
+end
 %%
 function [v, d] = getEigs(A, k, tol, maxit) 
     n = size(A, 1);
@@ -160,12 +161,12 @@ for j = 1:m
         tol_outer, maxit_outer, ...
         precond, M_smo_ilu0, solver);
 
-    log_curves{j} = log10(resvec_outer(:));
+    log_curves{j} = log(resvec_outer(:));
     lens(j) = numel(resvec_outer(:));
 end
 
-Lmax = max(lens);
-resvec_matrix = NaN(Lmax, m); % NaN Matrix Padding
+Lmin = min(lens);
+resvec_matrix = NaN(Lmin, m); % NaN Matrix Padding
 for j = 1:m
     L = lens(j);
     resvec_matrix(1:L, j) = log_curves{j};
@@ -185,24 +186,16 @@ else
 end
 end
 
-function test_mgd( ...
-    A, B, v, ...
+function test_mgd(A, B, v, ...
     tol_inner, maxit_inner, ...
     tol_outer, maxit_outer, ...
     precond, M_smo_ilu0, solver)
-    if nargin < 10 || isempty(solver) || strcmpi(solver, 'bicgstab')
-        mstyle = '-';
-    else
-        mstyle = '--';
-    end
 
-    m = size(B, 2);
+m = size(B, 2);
+Xmax_each = zeros(m,1);         % gather total inner iteratons per rhs
+interp_ln_resvecs = cell(m,1);  % interp on 1:Xmax, gather'em all
 
-    X_list = cell(m, 1);
-    Y_list = cell(m, 1);
-    Xmax = 0;
-
-    for j = 1:m
+for j = 1:m
         rhs = B(:, j);
         [~, ~, inner_iter_vec, resvec_outer, ~] = MG_deflation( ...
             A, rhs, v, ...
@@ -210,42 +203,41 @@ function test_mgd( ...
             tol_outer, maxit_outer, ...
             precond, M_smo_ilu0, solver);
 
-        y = resvec_outer(2:end);
-        x = cumsum(inner_iter_vec(:));
-        assert(numel(x) == numel(y), 'inner_iter_vec size must match resvec_outer(2:end)');
-
-        X_list{j} = x(:);
-
-        Y_list{j} = max(y(:), eps);
-
-        if ~isempty(x)
-            Xmax = max(Xmax, x(end));
-        end
+    resvec_outer = resvec_outer(2:end);
+    if precond == 0 || precond == 2
+        X = (1:numel(resvec_outer)); 
+    else
+        X = cumsum(inner_iter_vec);
     end
+    Xq = (1:max(X));
+    assert(numel(X) == numel(resvec_outer), 'inner_iter_vec size must match resvec_outer(2:end)');
 
-    if Xmax == 0
-        warning('No valid samples to average.');
-        return;
-    end
+    ln_resvec_outer = log(resvec_outer);
+    ln_resvec_q = interp1(X, ln_resvec_outer, Xq, 'linear');
+    interp_ln_resvecs{j} = ln_resvec_q;
+    Xmax_each(j) = max(X);
+end
+% Truncation
+Lmin = min(Xmax_each(Xmax_each>0));
+resvec_matrix = NaN(Lmin, m); % NaN padding
+for j = 1:m
+    resvec_matrix(:, j) = interp_ln_resvecs{j}(1:Lmin);
+end
+mean_log = mean(resvec_matrix, 2, 'omitnan'); 
+                                     
+geo_mean = exp(mean_log);
+% Plot
+if strcmpi(solver, 'bicgstab'), mstyle = '-';
+else 
+    mstyle = '--'; 
+end
 
-    % 投到统一的工作量网格：1..Xmax，在各自的 x 位置上放入 log(y)，其它为 NaN
-    LogY = NaN(Xmax, m);
-    for j = 1:m
-        x = X_list{j};
-        y = Y_list{j};
-        if isempty(x), continue; end
-        LogY(x, j) = log(y);
-    end
+if precond == 0
+    semilogy(geo_mean, 'LineStyle', '-', 'Marker','o'); hold on;
+else 
+    semilogy(geo_mean, 'LineStyle', mstyle); hold on;
+end
 
-    avg_log = mean(LogY, 2, 'omitnan');
-    avg_curve = exp(avg_log);
-    X = (1:Xmax).';
-    mask = ~isnan(avg_curve);
-
-    semilogy(X(mask), avg_curve(mask), 'LineWidth', 2, 'LineStyle', mstyle); hold on;
-    xlabel('Cumulative inner iterations');
-    ylabel('residual norm (resvec)');
-    % title(sprintf('Average of %d runs (geom. mean on work grid)', m));
 end
 
 function plotMGD(inner_iter_vec, resvec_outer, solver)
@@ -255,7 +247,7 @@ function plotMGD(inner_iter_vec, resvec_outer, solver)
         m = "--";
     end
     resvec_outer = resvec_outer(2:end);
-    assert(size(inner_iter_vec,1) == size(resvec_outer,1))
+    assert(size(inner_iter_vec,1) == size(resvec_outer,1), 'inner_iter_vec size must match resvec_outer(2:end)')
     X = cumsum(inner_iter_vec);
     semilogy(X, resvec_outer, LineStyle=m);
 end

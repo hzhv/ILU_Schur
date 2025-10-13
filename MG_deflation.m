@@ -1,4 +1,4 @@
-function [sol_x, res_inner, inner_iter_vec, relresvec_outer, total_iters] = MG_deflation( ...
+function [sol_x, res_inner, inner_iter_vec, relresvec_outer, outer_iters] = MG_deflation( ...
     A, rhs, v, ...
     tol_inner, maxit_inner, ...
     tol_outer, maxit_outer, ...
@@ -14,24 +14,23 @@ end
 res_inner = [];
 inner_iter_vec = [];
 
-inv_time = @(x) (v'*A*v) \ x; % coarse operator = (V' A V)^{-1} x
-P        = @(x) A * (v * inv_time(v'*x));
+inv_time = @(x) (v'*A*v) \ x;    % coarse operator = inv(V' A V) x
+P = @(x) A * (v*inv_time(v'*x));
 
 % Counters
 total_inner_iters = 0;   
-precond_calls = 0;   % preconditioner calls
 
 if precond == 0      % unprec
     M2 = [];
 elseif precond == 1  % inner solver w/ unprec. deflation
     M2 = @(x) Ainvb_with_count(x, []);
-elseif precond == 2  % ilu0
+elseif precond == 2  % ilu0 on smoother
     M2 = M_smo;
 elseif precond == 3  % inner solver w/ ilu(0) deflation
     M2 = @(x) Ainvb_with_count(x, M_smo);
 end
 
-[sol_x, ~, relres, outer_iters, resvec_outer] = solver(A, rhs, tol_outer, maxit_outer, [], M2, []);
+[sol_x, ~, relres, outer_iters, resvec_outer] = solver(A, rhs, tol_outer, maxit_outer, [], M2, []); % A M^{-1} x = rhs
 
 relresvec_outer = resvec_outer/norm(rhs);
 
@@ -42,15 +41,15 @@ fprintf('Last Relative Residual: %d\n', relres)
 fprintf('Total iters: %d\n', total_iters);
 
     function y = Ainvb_with_count(b_in, M2) % Inner
-        precond_calls = precond_calls + 1; % count preconditioner calls
 
-        coarse = v * inv_time(v' * b_in);  % course, no iters, x0
+        coarse = v * inv_time(v'*b_in);   % course, y_coarse = A^{-1} P b
 
-        rtilde = b_in - P(b_in);           % smoother A z = (I - P) b
+        rtilde = b_in - P(b_in);           % smoother, A z = (I - P) b
    
         % % inv(A)b = inv(A)Pb + inv(A)(I-P)b
-        [y, ~, ~, it_in, resvec_inner] = solver(A, b_in, tol_inner, maxit_inner, [], M2, coarse);
+        [z, ~, ~, it_in, resvec_inner] = solver(A, rtilde, tol_inner, maxit_inner, [], M2, zeros(size(b_in))); % Friday Bug
         total_inner_iters = total_inner_iters + it_in;
+        y = coarse + z;
         
         res_inner = [res_inner; resvec_inner];
         inner_iter_vec = [inner_iter_vec;it_in];
