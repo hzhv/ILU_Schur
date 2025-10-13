@@ -1,16 +1,10 @@
-function test_MG
-% Note these tests only for plotting
-
-% n = 100;
-% rng("default")
-% A = rand(n);
-% A = A'*A;     % symmetry
-% rhs = (1:n)';
+function test_MG(m)
+% Noted these tests only for plotting
 
 A = load('./A_level2.mat').A;
 n = size(A,1);
 rhs = load('./rhs_level2.mat').x;
-m = 100;
+
 rhs = rhs(:,1:m); %% try more rhs plz
 
 setup.type    = 'nofill';
@@ -93,11 +87,12 @@ test_mgd(...
 lb{index} = "bicgstab k=100, ilu(0) smo";
 index = index + 1;
 
+yline(tol_outer,'r-.','DisplayName', sprintf('Tol'));
 grid on;
 legend(lb);
 xlabel('Cumulative inner iterations');
 ylabel('residual norm (resvec)');
-title(sprintf('Average of %d runs (geom. mean)', m));
+title(sprintf('Average of %d RHS (geom. mean)', m));
 
 savefig(f, 'MG_test_avg.fig');
 saveas(f, 'MG_test_avg.pdf');
@@ -209,13 +204,16 @@ for j = 1:m
     else
         X = cumsum(inner_iter_vec);
     end
-    Xq = (1:max(X));
+    
     assert(numel(X) == numel(resvec_outer), 'inner_iter_vec size must match resvec_outer(2:end)');
+    [Xu, ia] = unique(X, 'stable');  % X_unique
+    resvec_outer = resvec_outer(ia);
 
+    Xq = (1:max(Xu));
     ln_resvec_outer = log(resvec_outer);
-    ln_resvec_q = interp1(X, ln_resvec_outer, Xq, 'linear');
+    ln_resvec_q = interp1(Xu, ln_resvec_outer, Xq, 'linear');
     interp_ln_resvecs{j} = ln_resvec_q;
-    Xmax_each(j) = max(X);
+    Xmax_each(j) = max(Xu);
 end
 % Truncation
 Lmin = min(Xmax_each(Xmax_each>0));
