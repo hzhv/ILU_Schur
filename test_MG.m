@@ -87,7 +87,10 @@ test_mgd(...
 lb{index} = "bicgstab k=100, ilu(0) smo";
 index = index + 1;
 
-yline(tol_outer,'r-.','DisplayName', sprintf('Tol'));
+rhs_norms = vecnorm(rhs, 1);       
+gm_rhs_norm = exp(mean(log(rhs_norms)));    
+yline(tol_outer*gm_rhs_norm ,'r-.','DisplayName', sprintf('Tol'));
+
 grid on;
 legend(lb);
 xlabel('Cumulative inner iterations');
