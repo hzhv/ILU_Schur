@@ -1,27 +1,33 @@
-function test_MG(m)
-% Noted these tests only for plotting
-
-A = load('./A_level2.mat').A;
-n = size(A,1);
-rhs = load('./rhs_level2.mat').x;
-
-rhs = rhs(:,1:m); %% try more rhs plz
-
-setup.type    = 'nofill';
-setup.droptol = 0;  
-[L, U] = ilu(A, setup);
-M_smo_ilu0 = @(x) U\(L\x);
-
+function test_MG
+%% Noted these tests only for plotting, 200 eigs
+m = 100; % # of RHSs
 tol_inner = 0.01; maxit_inner = 4;
 tol_outer = 1e-2; maxit_outer = 30;
 
-lb = {};
-index = 1;
-load("eigs200.mat");
+A = load('./A_level2.mat').A;
+bs = 64; dim=[4 4 4 8];
 
+rhs = load('./rhs_level2.mat').x;
+rhs = rhs(:,1:m);
+
+[L, U] = ilu(A, struct('type','nofill'));
+M_smo_ilu0 = @(x) U\(L\x);
+
+bj = invblkdiag(A, bs);
+M_smo_bj = @(x) bj * x;
+
+colors = coloring(dim,bs,1,1,zeros(size(dim)));
+[~, p] = sort(colors);
+% A = A(p, p);  % Colored
+
+eigs200 = load("eigs200.mat").eigCell;
 v = extractEigs(eigs200, 100);
 % v = v.*(1+0.1*complex(randn(n,100),randn(n,100)));
 v = orth(v);
+
+lb = {};
+index = 1;
+
 
 f = figure;
 test_mgd( ...
@@ -52,13 +58,6 @@ test_mgd( ...
 lb{index} = "min res ilu0";
 index = index + 1;
 
-% [sol_x, res_inner, inner_iter_vec, resvec_outer, total_iters] = MG_deflation(A, rhs, v, ...
-%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-%     1, M_smo_ilu0, 'min');
-% plotMGD(inner_iter_vec,resvec_outer, 'min'); hold on;
-% lb{index} = "min res, k=100";
-% index = index + 1;
-
 test_mgd(...
     A, rhs, v, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
@@ -87,40 +86,53 @@ test_mgd(...
 lb{index} = "bicgstab k=100, ilu(0) smo";
 index = index + 1;
 
+test_mgd( ...
+    A, rhs, v, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    4, M_smo_bj, 'bicgstab');
+lb{index} = "bicgstab bj";
+index = index + 1;
+
+test_mgd( ...
+    A, rhs, v, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    4, M_smo_bj, 'min');
+lb{index} = "min res bj";
+index = index + 1;
+
+test_mgd(...
+    A, rhs, v, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, M_smo_bj, 'bicgstab');
+lb{index} = "bicgstab k=100, bj smo";
+index = index + 1;
+
+test_mgd(...
+    A, rhs, v, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, M_smo_bj, 'min');
+lb{index} = "min res k=100, bj smo";
+index = index + 1;
+
 rhs_norms = vecnorm(rhs, 1);       
 gm_rhs_norm = exp(mean(log(rhs_norms)));    
-yline(tol_outer*gm_rhs_norm ,'r-.','DisplayName', sprintf('Tol'));
+% yline(tol_outer*gm_rhs_norm ,'r-.','DisplayName', sprintf('Tol'));
 
 grid on;
 legend(lb);
-xlabel('Cumulative inner iterations');
-ylabel('residual norm (resvec)');
-title(sprintf('Average of %d RHS (geom. mean)', m));
+% xlabel('Cumulative inner iterations');
+% ylabel('residual norm (resvec)');
+% title(sprintf('Average of %d RHS (geom. mean)', m));
 
 savefig(f, 'MG_test_avg.fig');
 saveas(f, 'MG_test_avg.pdf');
-
 end
-%% Plot Eig Values
-function plot_eigValues
-load("eigs200.mat");
 
-d_200 = sqrt(sort(abs(diag(eigs200{2})), "descend"))/sqrt(max(abs(diag(eigs200{2}))));
-
-semilogy(d_200); grid on;
-title("Eigenvalue Magnitude Decay");
-xlabel("Magnitude Descend");
-ylabel("|Eig Val|")
-end
 %%
 function [v, d] = getEigs(A, k, tol, maxit) 
     n = size(A, 1);
     t=@(A,b)bicgstab(A, b, 0.003, 1000); 
-    % ======= inv(A')*y = inv(A') * inv(A) * b =============
-    % [v, d] = eigs(@(x)t(A',t(A,x)), n, k, 'largestimag', ...
-    %           'Tolerance',tol,'MaxIterations',maxit);
-    
-    % ======= inv(A)* y = inv(A) * inv(A)' * b =============
+    % No! inv(A')*y = inv(A') * inv(A) * b
     [v, d] = eigs(@(x)t(A,t(A',x)), n, k, 'largestimag', ...
               'Tolerance',tol,'MaxIterations',maxit);
     eigCell = {v, d};
@@ -202,7 +214,7 @@ for j = 1:m
             precond, M_smo_ilu0, solver);
 
     resvec_outer = resvec_outer(2:end);
-    if precond == 0 || precond == 2
+    if precond == 0 || precond == 2 || precond == 4
         X = (1:numel(resvec_outer)); 
     else
         X = cumsum(inner_iter_vec);
@@ -234,9 +246,13 @@ else
 end
 
 if precond == 0
-    semilogy(geo_mean, 'LineStyle', '-', 'Marker','o'); hold on;
-else 
-    semilogy(geo_mean, 'LineStyle', mstyle); hold on;
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','o'); hold on;
+elseif precond == 1
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','.'); hold on;
+elseif precond == 2 || precond == 3
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle); hold on;
+elseif precond == 4 || precond == 5
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','x'); hold on;
 end
 
 end
@@ -251,4 +267,12 @@ function plotMGD(inner_iter_vec, resvec_outer, solver)
     assert(size(inner_iter_vec,1) == size(resvec_outer,1), 'inner_iter_vec size must match resvec_outer(2:end)')
     X = cumsum(inner_iter_vec);
     semilogy(X, resvec_outer, LineStyle=m);
+
 end
+
+% [sol_x, res_inner, inner_iter_vec, resvec_outer, total_iters] = MG_deflation(A, rhs, v, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     1, M_smo_ilu0, 'min');
+% plotMGD(inner_iter_vec,resvec_outer, 'min'); hold on;
+% lb{index} = "min res, k=100";
+% index = index + 1;
