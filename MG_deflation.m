@@ -51,9 +51,10 @@ fprintf('Total iters: %d\n', total_iters);
         rtilde = b_in - P(b_in);          % smoother, A z = (I - P) b
    
         % % inv(A)b = inv(A)Pb + inv(A)(I-P)b
-        [z, ~, ~, it_in, resvec_inner] = solver(A, rtilde, tol_inner, maxit_inner, [], M2, zeros(size(b_in))); % Friday Bug
+        [y, ~, ~, it_in, resvec_inner] = solver(A, b_in, tol_inner, maxit_inner, [], M2, coarse); 
+        % [z, ~, ~, it_in, resvec_inner] = solver(A, rtilde, tol_inner, maxit_inner, [], M2, zeros(size(b_in))); % Friday Bug
         total_inner_iters = total_inner_iters + it_in;       
-        y = coarse + z;
+        % y = coarse + z;
         
         res_inner = [res_inner; resvec_inner];
         inner_iter_vec = [inner_iter_vec;it_in];

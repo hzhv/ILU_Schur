@@ -1,14 +1,17 @@
 function test_MG
 %% Noted these tests only for plotting, 200 eigs
-m = 100; % # of RHSs
-tol_inner = 0.01; maxit_inner = 4;
-tol_outer = 1e-2; maxit_outer = 30;
+m = 10; % # of RHSs
+tol_inner = 0.1; maxit_inner = 4;
+tol_outer = 1e-3; maxit_outer = 15;
 
-A = load('./A_level2.mat').A;
+A = load('./A_level2.mat').A; % Not Hermitian:
+                              % Hermitian: diag of A are real number
 bs = 64; dim=[4 4 4 8];
 
 rhs = load('./rhs_level2.mat').x;
 rhs = rhs(:,1:m);
+
+% rhs = randn(size(A,1),10);
 
 [L, U] = ilu(A, struct('type','nofill'));
 M_smo_ilu0 = @(x) U\(L\x);
@@ -16,9 +19,12 @@ M_smo_ilu0 = @(x) U\(L\x);
 bj = invblkdiag(A, bs);
 M_smo_bj = @(x) bj * x;
 
-colors = coloring(dim,bs,1,1,zeros(size(dim)));
-[~, p] = sort(colors);
+% colors = coloring(dim,bs,1,1,zeros(size(dim)));
+% [~, p] = sort(colors);
 % A = A(p, p);  % Colored
+% for i = 1:m
+%     rhs(:,i) = rhs(p,i);
+% end
 
 eigs200 = load("eigs200.mat").eigCell;
 v = extractEigs(eigs200, 100);
@@ -114,9 +120,9 @@ test_mgd(...
 lb{index} = "min res k=100, bj smo";
 index = index + 1;
 
-rhs_norms = vecnorm(rhs, 1);       
-gm_rhs_norm = exp(mean(log(rhs_norms)));    
-% yline(tol_outer*gm_rhs_norm ,'r-.','DisplayName', sprintf('Tol'));
+% rhs_norms = vecnorm(rhs, 1);       
+% gm_rhs_norm = exp(mean(log(rhs_norms)));    
+yline(tol_outer ,'r-.','DisplayName', sprintf('Tol'));
 
 grid on;
 legend(lb);
@@ -128,7 +134,6 @@ savefig(f, 'MG_test_avg.fig');
 saveas(f, 'MG_test_avg.pdf');
 end
 
-%%
 function [v, d] = getEigs(A, k, tol, maxit) 
     n = size(A, 1);
     t=@(A,b)bicgstab(A, b, 0.003, 1000); 
@@ -153,53 +158,11 @@ end
 
 % geometric_mean prod(resvec_1,....,resvec100)^{1/100}
 % ==> exp(mean(log(X))
-function test_unprec( ...
-    A, B, v, ...
-    tol_inner, maxit_inner, ...
-    tol_outer, maxit_outer, ...
-    precond, M_smo_ilu0, solver)
-
-m = size(B,2);
-lens = zeros(m,1);
-log_curves = cell(m, 1);
-
-for j = 1:m
-    rhs = B(:,j);
-    [~, ~, ~, resvec_outer, ~] = MG_deflation( ...
-        A, rhs, v, ...
-        tol_inner, maxit_inner, ...
-        tol_outer, maxit_outer, ...
-        precond, M_smo_ilu0, solver);
-
-    log_curves{j} = log(resvec_outer(:));
-    lens(j) = numel(resvec_outer(:));
-end
-
-Lmin = min(lens);
-resvec_matrix = NaN(Lmin, m); % NaN Matrix Padding
-for j = 1:m
-    L = lens(j);
-    resvec_matrix(1:L, j) = log_curves{j};
-end
-
-avg_log = mean(resvec_matrix, 2, 'omitnan'); 
-avg_curve = exp(avg_log);     % exp(mean(log))
-
-if strcmpi(solver, 'bicgstab'), mstyle = '-';
-else 
-    mstyle = '--'; 
-end
-if precond == 0
-    semilogy(avg_curve, 'LineStyle', '-', 'Marker','o'); hold on;
-else 
-    semilogy(avg_curve, 'LineStyle', mstyle); hold on;
-end
-end
 
 function test_mgd(A, B, v, ...
     tol_inner, maxit_inner, ...
     tol_outer, maxit_outer, ...
-    precond, M_smo_ilu0, solver)
+    precond, M_smo, solver)
 
 m = size(B, 2);
 Xmax_each = zeros(m,1);         % gather total inner iteratons per rhs
@@ -211,13 +174,14 @@ for j = 1:m
             A, rhs, v, ...
             tol_inner, maxit_inner, ...
             tol_outer, maxit_outer, ...
-            precond, M_smo_ilu0, solver);
-
-    resvec_outer = resvec_outer(2:end);
+            precond, M_smo, solver);
+    
+    % resvec_outer = resvec_outer(2:end);
     if precond == 0 || precond == 2 || precond == 4
         X = (1:numel(resvec_outer)); 
     else
         X = cumsum(inner_iter_vec);
+        X = [1; X];
     end
     
     assert(numel(X) == numel(resvec_outer), 'inner_iter_vec size must match resvec_outer(2:end)');
@@ -231,13 +195,17 @@ for j = 1:m
     Xmax_each(j) = max(Xu);
 end
 % Truncation
-Lmin = min(Xmax_each(Xmax_each>0));
-resvec_matrix = NaN(Lmin, m); % NaN padding
+Lmin = min(Xmax_each);
+resvec_matrix = NaN(Lmin, m); % construct convergence history for all rhs
 for j = 1:m
     resvec_matrix(:, j) = interp_ln_resvecs{j}(1:Lmin);
 end
-mean_log = mean(resvec_matrix, 2, 'omitnan'); 
-                                     
+if anynan(resvec_matrix)
+    fprintf("\n%s solover, precond=%g\n", solver, precond);
+    error("NaN in conv history");
+end
+    
+mean_log = mean(resvec_matrix, 2); %'omitnan'); 
 geo_mean = exp(mean_log);
 % Plot
 if strcmpi(solver, 'bicgstab'), mstyle = '-';
