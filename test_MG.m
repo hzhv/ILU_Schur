@@ -1,17 +1,19 @@
-function test_MG
+% function test_MG
 %% Noted these tests only for plotting, 200 eigs
+% Outer Solver Options: bicgstab, min_res
+% inner Solver: GMRES
+
 m = 10; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
-A = load('./A_level2.mat').A; % Not Hermitian:
-                              % Hermitian: diag of A are real number
+A = load('./A_level2.mat').A; % No Hermitian
+n = size(A, 1);               % Hermitian: diag of A are real number
 bs = 64; dim=[4 4 4 8];
 
-rhs = load('./rhs_level2.mat').x;
-rhs = rhs(:,1:m);
-
-% rhs = randn(size(A,1),10);
+% rhs = load('./rhs_level2.mat').x;
+% rhs = rhs(:, m);
+rhs = randn(size(A,1),1);
 
 [L, U] = ilu(A, struct('type','nofill'));
 M_smo_ilu0 = @(x) U\(L\x);
@@ -22,7 +24,7 @@ M_smo_bj = @(x) bj * x;
 % colors = coloring(dim,bs,1,1,zeros(size(dim)));
 % [~, p] = sort(colors);
 % A = A(p, p);  % Colored
-% for i = 1:m
+% for i = 1
 %     rhs(:,i) = rhs(p,i);
 % end
 
@@ -34,7 +36,7 @@ v = orth(v);
 lb = {};
 index = 1;
 
-
+%%
 f = figure;
 test_mgd( ...
     A, rhs, v, ...
@@ -72,9 +74,9 @@ lb{index} = "min res, k=100";
 index = index + 1;
 
 test_mgd(...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    1, M_smo_ilu0, 'bicgstab');
+A, rhs, v, ...
+tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+1, M_smo_ilu0, 'bicgstab');
 lb{index} = "bicgstab, k=100";
 index = index + 1;
 
@@ -119,11 +121,9 @@ test_mgd(...
     5, M_smo_bj, 'min');
 lb{index} = "min res k=100, bj smo";
 index = index + 1;
-
-% rhs_norms = vecnorm(rhs, 1);       
-% gm_rhs_norm = exp(mean(log(rhs_norms)));    
+  
 yline(tol_outer ,'r-.','DisplayName', sprintf('Tol'));
-
+%%
 grid on;
 legend(lb);
 % xlabel('Cumulative inner iterations');
@@ -132,7 +132,7 @@ legend(lb);
 
 savefig(f, 'MG_test_avg.fig');
 saveas(f, 'MG_test_avg.pdf');
-end
+% end
 
 function [v, d] = getEigs(A, k, tol, maxit) 
     n = size(A, 1);
@@ -175,16 +175,15 @@ for j = 1:m
             tol_inner, maxit_inner, ...
             tol_outer, maxit_outer, ...
             precond, M_smo, solver);
-    
-    % resvec_outer = resvec_outer(2:end);
+    resvec_outer = resvec_outer/norm(rhs);
+
     if precond == 0 || precond == 2 || precond == 4
         X = (1:numel(resvec_outer)); 
     else
-        X = cumsum(inner_iter_vec);
-        X = [1; X];
+        X = [1; cumsum(inner_iter_vec(:))];
     end
-    
-    assert(numel(X) == numel(resvec_outer), 'inner_iter_vec size must match resvec_outer(2:end)');
+    assert(numel(X) == numel(resvec_outer), ...
+        'inner_iter_vec size must match resvec_outer(2:end)');
     [Xu, ia] = unique(X, 'stable');  % X_unique
     resvec_outer = resvec_outer(ia);
 
@@ -195,7 +194,7 @@ for j = 1:m
     Xmax_each(j) = max(Xu);
 end
 % Truncation
-Lmin = min(Xmax_each);
+Lmin = floor(min(Xmax_each));
 resvec_matrix = NaN(Lmin, m); % construct convergence history for all rhs
 for j = 1:m
     resvec_matrix(:, j) = interp_ln_resvecs{j}(1:Lmin);
