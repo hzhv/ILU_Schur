@@ -46,7 +46,7 @@ fprintf('Total iters: %d\n', total_iters);
         rtilde = b_in - P(b_in);          % smoother, A z = (I - P) b
 
         % % inv(A)b = inv(A)Pb + inv(A)(I-P)b
-        [y, flag, ~, it_in, resvec_inner] = gmres(A, b_in, maxit_inner, tol_inner, maxit_inner, [], M2, coarse); 
+        [y, flag, ~, it_in, resvec_inner] = gmres(A, b_in, maxit_inner, tol_inner, 1, [], M2, coarse); 
         gmres_iter = (it_in(1)-1)*maxit_inner + it_in(2);
               
         total_inner_iters = total_inner_iters + gmres_iter;       

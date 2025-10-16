@@ -1,9 +1,9 @@
-% function test_MG
+function test_MG
 %% Noted these tests only for plotting, 200 eigs
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
 
-m = 10; % # of RHSs
+m = 100; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
@@ -11,9 +11,9 @@ A = load('./A_level2.mat').A; % No Hermitian
 n = size(A, 1);               % Hermitian: diag of A are real number
 bs = 64; dim=[4 4 4 8];
 
-% rhs = load('./rhs_level2.mat').x;
-% rhs = rhs(:, m);
-rhs = randn(size(A,1),1);
+rhs = load('./rhs_level2.mat').x;
+rhs = rhs(:, 1:m);
+% rhs = randn(size(A,1),1);
 
 [L, U] = ilu(A, struct('type','nofill'));
 M_smo_ilu0 = @(x) U\(L\x);
@@ -36,7 +36,7 @@ v = orth(v);
 lb = {};
 index = 1;
 
-%%
+
 f = figure;
 test_mgd( ...
     A, rhs, v, ...
@@ -72,7 +72,7 @@ test_mgd(...
     1, M_smo_ilu0, 'min');
 lb{index} = "min res, k=100";
 index = index + 1;
-
+%
 test_mgd(...
 A, rhs, v, ...
 tol_inner, maxit_inner, tol_outer, maxit_outer, ...
@@ -123,16 +123,16 @@ lb{index} = "min res k=100, bj smo";
 index = index + 1;
   
 yline(tol_outer ,'r-.','DisplayName', sprintf('Tol'));
-%%
+
 grid on;
 legend(lb);
 % xlabel('Cumulative inner iterations');
 % ylabel('residual norm (resvec)');
 % title(sprintf('Average of %d RHS (geom. mean)', m));
 
-savefig(f, 'MG_test_avg.fig');
-saveas(f, 'MG_test_avg.pdf');
-% end
+% savefig(f, 'MG_test_avg.fig');
+% saveas(f, 'MG_test_avg.pdf');
+end
 
 function [v, d] = getEigs(A, k, tol, maxit) 
     n = size(A, 1);
