@@ -138,10 +138,26 @@ function [v, d] = getEigs(A, k, tol, maxit)
     n = size(A, 1);
     t=@(A,b)bicgstab(A, b, 0.003, 1000); 
     % No! inv(A')*y = inv(A') * inv(A) * b
-    [v, d] = eigs(@(x)t(A,t(A',x)), n, k, 'largestimag', ...
+    % ======= inv(A)* y = inv(A) * inv(A)' * b =============
+    % 
+    [v, d] = eigs(@(x) t(A, t(A',x)), n, k, 'largestimag', ...
               'Tolerance',tol,'MaxIterations',maxit);
     eigCell = {v, d};
     save("eigs200_1e1_1000.mat", "eigCell")
+end
+%%
+clc;clear;
+A = load("A_level2.mat").A;
+[U,S,V] = getSingularTrip(A, 2, 0.1, 1000);
+%%
+function [U,S,V] = getSingularTrip(A, k, tol, maxit)
+    t=@(A,b)bicgstab(A, b, 0.003, 1000);
+    Afun = @(x, tflag) t(A, x); % .........no.....
+
+    [U,S,V] = svds(Afun, size(A), k, 'largest', ...                                                                           t(A, b), size(A), k, 'largest', ...
+        'Tolerance', tol, 'MaxIterations',maxit);
+    SCell = {U, S, V};
+    save("singularTrip.mat", "SCell");
 end
 
 function [v, d] = extractEigs(eigs, k)
