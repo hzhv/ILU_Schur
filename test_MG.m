@@ -33,11 +33,25 @@ v = extractEigs(eigs200, 100);
 % v = v.*(1+0.1*complex(randn(n,100),randn(n,100)));
 v = orth(v);
 
+Triplets = load("singularTrip.mat").SCell;
+[U, S, V_tranp] = extractSTriplets(Triplets, 100);
+Vs = U; Ss = inv(S); Us = V_tranp'; % A^{-1} = Vs * Ss * U'
+Vs = orth(Vs); Us = orth(Us);
+
 lb = {};
 index = 1;
 
 
 f = figure;
+
+test_mgd_singular(...
+    A, rhs, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    3, M_smo_ilu0, 'bicgstab');
+
+
+%%
+
 test_mgd( ...
     A, rhs, v, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
@@ -72,7 +86,7 @@ test_mgd(...
     1, M_smo_ilu0, 'min');
 lb{index} = "min res, k=100";
 index = index + 1;
-%
+
 test_mgd(...
 A, rhs, v, ...
 tol_inner, maxit_inner, tol_outer, maxit_outer, ...
@@ -87,12 +101,12 @@ test_mgd(...
 lb{index} = "min res k=100, ilu(0) smo";
 index = index + 1;
 
-test_mgd(...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    3, M_smo_ilu0, 'bicgstab');
-lb{index} = "bicgstab k=100, ilu(0) smo";
-index = index + 1;
+% test_mgd(...
+%     A, rhs, v, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     3, M_smo_ilu0, 'bicgstab');
+% lb{index} = "bicgstab k=100, ilu(0) smo";
+% index = index + 1;
 
 test_mgd( ...
     A, rhs, v, ...
@@ -132,6 +146,7 @@ legend(lb);
 
 % savefig(f, 'MG_test_avg.fig');
 % saveas(f, 'MG_test_avg.pdf');
+
 end
 
 function [v, d] = getEigs(A, k, tol, maxit) 
@@ -145,21 +160,7 @@ function [v, d] = getEigs(A, k, tol, maxit)
     eigCell = {v, d};
     save("eigs200_1e1_1000.mat", "eigCell")
 end
-%%
-clc;clear;
-A = load("A_level2.mat").A;
-[U,S,V] = getSingularTrip(A, 2, 0.1, 1000);
-%%
-function [U,S,V] = getSingularTrip(A, k, tol, maxit)
-    t=@(A,b)bicgstab(A, b, 0.003, 1000);
-    Afun = @(x, tflag) t(A, x); % .........no.....
-
-    [U,S,V] = svds(Afun, size(A), k, 'largest', ...                                                                           t(A, b), size(A), k, 'largest', ...
-        'Tolerance', tol, 'MaxIterations',maxit);
-    SCell = {U, S, V};
-    save("singularTrip.mat", "SCell");
-end
-
+   
 function [v, d] = extractEigs(eigs, k)
     if nargin < 2, k = 1; end
     V = eigs{1};
@@ -172,10 +173,89 @@ function [v, d] = extractEigs(eigs, k)
     d = permD(1:k, 1:k);
 end
 
-% geometric_mean prod(resvec_1,....,resvec100)^{1/100}
-% ==> exp(mean(log(X))
+function [u, s, v] = extractSTriplets(triplets, k)
+    if nargin < 2, k = 1; end
+    U = triplets{1};
+    S = triplets{2};
+    V = triplets{3};
+    d = diag(S);
+    [~, perm] = sort(d, "descend");
+    permS = S(perm, perm);
+    permU = U(:, perm); 
+    permV = V(:, perm);
+    u = permU(:, 1:k);
+    s = permS(1:k, 1:k);
+    v = permV(:, 1:k);
+end
 
-function test_mgd(A, B, v, ...
+function test_mgd_singular(...
+    A, B, u, v, ...
+    tol_inner, maxit_inner, ...
+    tol_outer, maxit_outer, ...
+    precond, M_smo, solver)
+
+m = size(B, 2);
+Xmax_each = zeros(m,1);         % gather total inner iteratons per rhs
+interp_ln_resvecs = cell(m,1);  % interp on 1:Xmax, gather'em all
+
+for j = 1:m
+        rhs = B(:, j);
+        [~, ~, inner_iter_vec, resvec_outer, ~] = MG_deflation_Singular( ...
+            A, rhs, u, v, ...
+            tol_inner, maxit_inner, ...
+            tol_outer, maxit_outer, ...
+            precond, M_smo, solver);
+    resvec_outer = resvec_outer/norm(rhs);
+
+    if precond == 0 || precond == 2 || precond == 4
+        X = (1:numel(resvec_outer)); 
+    else
+        X = [1; cumsum(inner_iter_vec(:))];
+    end
+    assert(numel(X) == numel(resvec_outer), ...
+        'inner_iter_vec size must match resvec_outer(2:end)');
+    [Xu, ia] = unique(X, 'stable');  % X_unique
+    resvec_outer = resvec_outer(ia);
+
+    Xq = (1:max(Xu));
+    ln_resvec_outer = log(resvec_outer);
+    ln_resvec_q = interp1(Xu, ln_resvec_outer, Xq, 'linear');
+    interp_ln_resvecs{j} = ln_resvec_q;
+    Xmax_each(j) = max(Xu);
+end
+% Truncation
+Lmin = floor(min(Xmax_each));
+resvec_matrix = NaN(Lmin, m); % construct convergence history for all rhs
+for j = 1:m
+    resvec_matrix(:, j) = interp_ln_resvecs{j}(1:Lmin);
+end
+if anynan(resvec_matrix)
+    fprintf("\n%s solover, precond=%g\n", solver, precond);
+    error("NaN in conv history");
+end
+    
+mean_log = mean(resvec_matrix, 2); %'omitnan'); 
+geo_mean = exp(mean_log);
+% Plot
+if strcmpi(solver, 'bicgstab'), mstyle = '-';
+else 
+    mstyle = '--'; 
+end
+
+if precond == 0
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','o'); hold on;
+elseif precond == 1
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','.'); hold on;
+elseif precond == 2 || precond == 3
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle); hold on;
+elseif precond == 4 || precond == 5
+    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','x'); hold on;
+end
+
+end
+
+function test_mgd(...
+    A, B, v, ...
     tol_inner, maxit_inner, ...
     tol_outer, maxit_outer, ...
     precond, M_smo, solver)

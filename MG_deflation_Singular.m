@@ -1,5 +1,5 @@
-function [sol_x, res_inner, inner_iter_vec, resvec_outer, outer_iters] = MG_deflation( ...
-    A, rhs, v, ...
+function [sol_x, res_inner, inner_iter_vec, resvec_outer, outer_iters] = MG_deflation_Singular( ...
+    A, rhs, u, v, ...
     tol_inner, maxit_inner, ...
     tol_outer, maxit_outer, ...
     precond, M_smo, solver)
@@ -13,11 +13,8 @@ end
 res_inner = {};
 inner_iter_vec = [];
 
-inv_time = @(x) (v'*A*v) \ x;    % coarse operator = inv(V' A V) x
-P = @(x) A * (v*inv_time(v'*x));
-
-% inv_time = @(x) (v'*A*u) \ x;
-% P = @(x) A * (u*inv_time(v'*x));
+inv_time = @(x) (v'*A*u) \ x;
+P = @(x) A * (u*inv_time(v'*x));
 
 total_inner_iters = 0;   
 
@@ -57,12 +54,5 @@ fprintf('Total iters: %d\n', total_iters);
         res_inner{end+1} = resvec_inner;
         inner_iter_vec(end+1)= gmres_iter;
     end
-
-
-
-    %     fprintf(['INNER CALL: ' ...
-    %         '            norm(b)=%.3e, r0_rel=%.3e, it=%d, flag=%d, relres=%.3e, first_res=%.3e, last_res=%.3e\n'], ...
-    %     nb, r0_rel, it_in, flag, relres, resvec_inner(1), resvec_inner(end));
-    % 
 
 end

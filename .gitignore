@@ -1,7 +1,9 @@
 /*.mat
+/*.bin
 /*.asv
 /test_mat_generation.m
 /test_different_gpu.m
 /sketch.m
 /sketchh.m
-/bmc.m
+
+primme/
