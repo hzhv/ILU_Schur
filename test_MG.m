@@ -34,7 +34,7 @@ index = 1;
 
 
 disp("Tests start...")
-figure;
+f = figure;
 % =================== Schur ======================================
 p = coloring(dim,bs,1,1,zeros(size(dim)));
 [~, perm] = sort(p);
@@ -299,20 +299,22 @@ mean_log = mean(resvec_matrix, 2); %'omitnan');
 geo_mean = exp(mean_log);
 % Plot
 
-if strcmpi(solver, 'bicgstab'), mstyle = '--';
+% if strcmpi(solver, 'bicgstab'), mstyle = '--';
+if size(A,1) < 30000 % TODO...
+   mstyle = '--'; 
 else 
-    mstyle = '-'; 
+   mstyle = '-';
 end
 % if colorTest == 1, mstyle = '-'; end
 
 if precond == 0
-    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle, 'Marker','o'); hold on;
+    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle); hold on;
 elseif precond == 1
-    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle, 'Marker','^'); hold on;
+    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','o'); hold on;
 elseif precond == 2 || precond == 3
-    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle); hold on;
+    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','^'); hold on;
 elseif precond == 4 || precond == 5
-    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle, 'Marker','+'); hold on;
+    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','+'); hold on;
 end
 
 end
