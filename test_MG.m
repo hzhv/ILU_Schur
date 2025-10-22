@@ -2,7 +2,7 @@ function test_MG
 %% Noted these tests only for plotting, 200 eigs
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
-clear;clc;
+
 m = 10; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
@@ -33,7 +33,9 @@ lb = {};
 index = 1;
 
 
-% ========= Schur ================================================
+disp("Tests start...")
+figure;
+% =================== Schur ======================================
 p = coloring(dim,bs,1,1,zeros(size(dim)));
 [~, perm] = sort(p);
 Ap = A(perm, perm);  % Colored
@@ -52,6 +54,9 @@ rhs0 = rhs(p==0,:) - a01*(inva11*rhs(p==1,:));
 [lSch, uSch] = ilu(s, struct('type','nofill'));
 M_Schur_ilu0 = @(x) uSch\(lSch\x);
 
+[Lp, Up] = ilu(Ap, struct('type','nofill'));
+M_Aperm_ilu0 = @(x) Up\(Lp\x);
+
 bjs = invblkdiag(s, bs);
 assert(mod(size(s,1),bs)==0);
 M_Schur_bj = @(x) bjs * x;
@@ -60,127 +65,140 @@ SchurTrip = load("SchurSingularTrip.mat").SCell;
 USch = SchurTrip{1}; SSch = SchurTrip{2}; VSch = SchurTrip{3};
 
 
-disp("Tests start...")
-figure;
+
+%%
 test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
-lb{index} = "Schur, unprec";
+lb{index} = "MinRes(S), unprec";
 index = index + 1;
 
 test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     1, M_smo_ilu0, 'min');
-lb{index} = "Schur, k=64 deflation";
+lb{index} = "MinRes(S, defl)";
 index = index + 1;
 
 test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2, M_Schur_ilu0, 'min');
-lb{index} = "Schur, ilu0 on S";
+lb{index} = "MinRes(S, ilu0(S))";
 index = index + 1;
 
 test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_Schur_ilu0, 'min');
-lb{index} = "Schur, k=64 deflation, ilu(0) on S";
+lb{index} = "MinRes(S, defl(ilu0(S)))";
 index = index + 1;
 
 test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     4, M_Schur_bj, 'min');
-lb{index} = "Schur, bj on S";
+lb{index} = "MinRes(S, bj(S))";
 index = index + 1;
 
 test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5, M_Schur_bj, 'min');
-lb{index} = "Schur, k=64 deflation, bj on S";
+lb{index} = "MinRes(S, defl(bj(S)))";
 index = index + 1;
-% ===========================================================
+%% ===========================================================
 test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
-lb{index} = "2-color A, unprec";
+lb{index} = "MinRes(A(2-color)), unprec";
 index = index + 1;
 
 test_mgd_singular(...   
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     1, M_smo_ilu0, 'min');
-lb{index} = "2-color A, k=64 deflation";
+lb{index} = "MinRes(A(2-color), defl)";
 index = index + 1;
 
 test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2,  M_smo_ilu0, 'min');
-lb{index} = "2-color A, ilu0 on A";
+lb{index} = "MinRes(A(2-color), ilu0(A))";
 index = index + 1;
 
 test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_smo_ilu0, 'min');
-lb{index} = "2-color A, k=64 deflation, ilu(0) on A";
+lb{index} = "MinRes(A(2-color), defl(ilu0(A)))";
 index = index + 1;
 
 test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5,  M_smo_bj, 'min');
-lb{index} = "2-color A, k=64 deflation, bj smo on A";
+lb{index} = "MinRes(A(2-color), defl(bj(A)))";
 index = index + 1;
-grid on;
-legend(lb);
-% ===========================================================
+
+test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2,  M_Aperm_ilu0, 'min');
+lb{index} = "MinRes(A(2-color), ilu0(A(2-color)))";
+index = index + 1; 
+
+test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5,  M_Aperm_ilu0, 'min');
+lb{index} = "MinRes(A(2-color), defl(ilu0(A(2-color))))";
+index = index + 1; 
+
+%% ===========================================================
 test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
-lb{index} = "min res, unprec";
+lb{index} = "MinRes(A), unprec";
 index = index + 1;
 
 test_mgd_singular(...   
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     1, M_smo_ilu0, 'min');
-lb{index} = "k=64 deflation";
+lb{index} = "MinRes(A, defl)";
 index = index + 1;
 
 test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2,  M_smo_ilu0, 'min');
-lb{index} = "ilu0";
+lb{index} = "MinRes(A, ilu0(A))";
 index = index + 1;
 
 test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_smo_ilu0, 'min');
-lb{index} = "k=64 deflation, ilu(0) on A";
+lb{index} = "MinRes(A, defl(ilu0(A)))";
 index = index + 1;
 
 test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     4,  M_smo_bj, 'min');
-lb{index} = "bj";
+lb{index} = "MinRes(A, bj(A))";
 index = index + 1;
 
 test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5,  M_smo_bj, 'min');
-lb{index} = "k=64 deflation, bj on A";;
+lb{index} = "MinRes(A, defl(bj(A)))";
 index = index + 1;
 
 yline(tol_outer ,'r-.','DisplayName', sprintf('Tol'));
