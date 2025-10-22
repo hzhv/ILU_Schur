@@ -41,7 +41,7 @@ fprintf('Last Relative Residual: %d\n', relres)
 fprintf('Total iters: %d\n', total_iters);
 
     function y = Ainvb_with_count(b_in, M2) % Inner
-        coarse = v * inv_time(v'*b_in);   % course, y_coarse = A^{-1} P b
+        coarse = u * inv_time(v'*b_in);   % course, y_coarse = A^{-1} P b
 
         rtilde = b_in - P(b_in);          % smoother, A z = (I - P) b
 

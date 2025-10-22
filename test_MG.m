@@ -2,12 +2,12 @@ function test_MG
 %% Noted these tests only for plotting, 200 eigs
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
-
-m = 100; % # of RHSs
+clear;clc;
+m = 10; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
-A = load('./A_level2.mat').A; % No Hermitian
+A = load('./A_level2.mat').A; % Not Hermitian
 n = size(A, 1);               % Hermitian: diag of A are real number
 bs = 64; dim=[4 4 4 8];
 
@@ -21,134 +21,179 @@ M_smo_ilu0 = @(x) U\(L\x);
 bj = invblkdiag(A, bs);
 M_smo_bj = @(x) bj * x;
 
-% colors = coloring(dim,bs,1,1,zeros(size(dim)));
-% [~, p] = sort(colors);
-% A = A(p, p);  % Colored
-% for i = 1
-%     rhs(:,i) = rhs(p,i);
-% end
-
 eigs200 = load("eigs200.mat").eigCell;
-v = extractEigs(eigs200, 100);
+v = extractEigs(eigs200, 64);
 % v = v.*(1+0.1*complex(randn(n,100),randn(n,100)));
 v = orth(v);
 
 Triplets = load("singularTrip.mat").SCell;
-[U, S, V_tranp] = extractSTriplets(Triplets, 100);
-Vs = U; Ss = inv(S); Us = V_tranp'; % A^{-1} = Vs * Ss * U'
-Vs = orth(Vs); Us = orth(Us);
+Us = Triplets{1}; Ss = Triplets{2}; Vs = Triplets{3};
 
 lb = {};
 index = 1;
 
 
-f = figure;
+% ========= Schur ================================================
+p = coloring(dim,bs,1,1,zeros(size(dim)));
+[~, perm] = sort(p);
+Ap = A(perm, perm);  % Colored
+for i = 1:m, rhsp(:,i) = rhs(perm,i); end
+
+a00 = A(p==0,p==0);
+a01 = A(p==0,p==1);
+a10 = A(p==1,p==0);
+a11 = A(p==1,p==1);
+assert(nnz(blkdiag(a00, bs)-a00) == 0) 
+inva11 = invblkdiag(a11,bs);
+% s = @(x) a00*x - a01*(inva11*(a10*x));
+s = a00 - a01*(inva11*(a10));
+rhs0 = rhs(p==0,:) - a01*(inva11*rhs(p==1,:));
+
+[lSch, uSch] = ilu(s, struct('type','nofill'));
+M_Schur_ilu0 = @(x) uSch\(lSch\x);
+
+bjs = invblkdiag(s, bs);
+assert(mod(size(s,1),bs)==0);
+M_Schur_bj = @(x) bjs * x;
+
+SchurTrip = load("SchurSingularTrip.mat").SCell;
+USch = SchurTrip{1}; SSch = SchurTrip{2}; VSch = SchurTrip{3};
+
+
+disp("Tests start...")
+figure;
+test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    0, M_smo_ilu0, 'min');
+lb{index} = "Schur, unprec";
+index = index + 1;
+
+test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    1, M_smo_ilu0, 'min');
+lb{index} = "Schur, k=64 deflation";
+index = index + 1;
+
+test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2, M_Schur_ilu0, 'min');
+lb{index} = "Schur, ilu0 on S";
+index = index + 1;
+
+test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    3, M_Schur_ilu0, 'min');
+lb{index} = "Schur, k=64 deflation, ilu(0) on S";
+index = index + 1;
+
+test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    4, M_Schur_bj, 'min');
+lb{index} = "Schur, bj on S";
+index = index + 1;
+
+test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, M_Schur_bj, 'min');
+lb{index} = "Schur, k=64 deflation, bj on S";
+index = index + 1;
+% ===========================================================
+test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    0, M_smo_ilu0, 'min');
+lb{index} = "2-color A, unprec";
+index = index + 1;
+
+test_mgd_singular(...   
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    1, M_smo_ilu0, 'min');
+lb{index} = "2-color A, k=64 deflation";
+index = index + 1;
+
+test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2,  M_smo_ilu0, 'min');
+lb{index} = "2-color A, ilu0 on A";
+index = index + 1;
+
+test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    3, M_smo_ilu0, 'min');
+lb{index} = "2-color A, k=64 deflation, ilu(0) on A";
+index = index + 1;
+
+test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5,  M_smo_bj, 'min');
+lb{index} = "2-color A, k=64 deflation, bj smo on A";
+index = index + 1;
+grid on;
+legend(lb);
+% ===========================================================
+test_mgd_singular(...
+    A, rhs, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    0, M_smo_ilu0, 'min');
+lb{index} = "min res, unprec";
+index = index + 1;
+
+test_mgd_singular(...   
+    A, rhs, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    1, M_smo_ilu0, 'min');
+lb{index} = "k=64 deflation";
+index = index + 1;
 
 test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    3, M_smo_ilu0, 'bicgstab');
-
-
-%%
-
-test_mgd( ...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    0, M_smo_ilu0, 'bicgstab');
-lb{index} = "bicgstab unprec";
+    2,  M_smo_ilu0, 'min');
+lb{index} = "ilu0";
 index = index + 1;
 
-test_mgd( ...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    0, M_smo_ilu0, 'min');
-lb{index} = "min res unprec";
-index = index + 1;
-
-test_mgd( ...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    2, M_smo_ilu0, 'bicgstab');
-lb{index} = "bicgstab ilu0";
-index = index + 1;
-
-test_mgd( ...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    2, M_smo_ilu0, 'min');
-lb{index} = "min res ilu0";
-index = index + 1;
-
-test_mgd(...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    1, M_smo_ilu0, 'min');
-lb{index} = "min res, k=100";
-index = index + 1;
-
-test_mgd(...
-A, rhs, v, ...
-tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-1, M_smo_ilu0, 'bicgstab');
-lb{index} = "bicgstab, k=100";
-index = index + 1;
-
-test_mgd(...
-    A, rhs, v, ...
+test_mgd_singular(...
+    A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_smo_ilu0, 'min');
-lb{index} = "min res k=100, ilu(0) smo";
+lb{index} = "k=64 deflation, ilu(0) on A";
 index = index + 1;
 
-% test_mgd(...
-%     A, rhs, v, ...
-%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-%     3, M_smo_ilu0, 'bicgstab');
-% lb{index} = "bicgstab k=100, ilu(0) smo";
-% index = index + 1;
-
-test_mgd( ...
-    A, rhs, v, ...
+test_mgd_singular(...
+    A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, M_smo_bj, 'bicgstab');
-lb{index} = "bicgstab bj";
+    4,  M_smo_bj, 'min');
+lb{index} = "bj";
 index = index + 1;
 
-test_mgd( ...
-    A, rhs, v, ...
+test_mgd_singular(...
+    A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, M_smo_bj, 'min');
-lb{index} = "min res bj";
+    5,  M_smo_bj, 'min');
+lb{index} = "k=64 deflation, bj on A";;
 index = index + 1;
 
-test_mgd(...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5, M_smo_bj, 'bicgstab');
-lb{index} = "bicgstab k=100, bj smo";
-index = index + 1;
-
-test_mgd(...
-    A, rhs, v, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5, M_smo_bj, 'min');
-lb{index} = "min res k=100, bj smo";
-index = index + 1;
-  
 yline(tol_outer ,'r-.','DisplayName', sprintf('Tol'));
 
 grid on;
 legend(lb);
-% xlabel('Cumulative inner iterations');
-% ylabel('residual norm (resvec)');
 % title(sprintf('Average of %d RHS (geom. mean)', m));
 
 % savefig(f, 'MG_test_avg.fig');
 % saveas(f, 'MG_test_avg.pdf');
-
 end
 
+%%
 function [v, d] = getEigs(A, k, tol, maxit) 
     n = size(A, 1);
     t=@(A,b)bicgstab(A, b, 0.003, 1000); 
@@ -166,7 +211,7 @@ function [v, d] = extractEigs(eigs, k)
     V = eigs{1};
     D = eigs{2};
     d = diag(D);
-    [~, perm] = sort(d, "descend"); % compare the real part for C
+    [~, perm] = sort(d, "descend"); 
     permD = D(perm, perm);
     permV = V(:, perm); 
     v = permV(:, 1:k);
@@ -174,18 +219,16 @@ function [v, d] = extractEigs(eigs, k)
 end
 
 function [u, s, v] = extractSTriplets(triplets, k)
-    if nargin < 2, k = 1; end
+    if nargin < 2, k = 100; end
     U = triplets{1};
     S = triplets{2};
     V = triplets{3};
     d = diag(S);
     [~, perm] = sort(d, "descend");
-    permS = S(perm, perm);
-    permU = U(:, perm); 
-    permV = V(:, perm);
-    u = permU(:, 1:k);
-    s = permS(1:k, 1:k);
-    v = permV(:, 1:k);
+    
+    permU = U(:, perm);    u = permU(:, 1:k);
+    permS = S(perm, perm); s = permS(1:k, 1:k);
+    permV = V(:, perm);    v = permV(:, 1:k);
 end
 
 function test_mgd_singular(...
@@ -237,19 +280,21 @@ end
 mean_log = mean(resvec_matrix, 2); %'omitnan'); 
 geo_mean = exp(mean_log);
 % Plot
-if strcmpi(solver, 'bicgstab'), mstyle = '-';
+
+if strcmpi(solver, 'bicgstab'), mstyle = '--';
 else 
-    mstyle = '--'; 
+    mstyle = '-'; 
 end
+% if colorTest == 1, mstyle = '-'; end
 
 if precond == 0
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','o'); hold on;
+    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle, 'Marker','o'); hold on;
 elseif precond == 1
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','.'); hold on;
+    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle, 'Marker','^'); hold on;
 elseif precond == 2 || precond == 3
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle); hold on;
+    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle); hold on;
 elseif precond == 4 || precond == 5
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','x'); hold on;
+    semilogy(geo_mean, 'linewidth',3, 'LineStyle', mstyle, 'Marker','+'); hold on;
 end
 
 end
@@ -303,9 +348,11 @@ end
 mean_log = mean(resvec_matrix, 2); %'omitnan'); 
 geo_mean = exp(mean_log);
 % Plot
-if strcmpi(solver, 'bicgstab'), mstyle = '-';
+% if strcmpi(solver, 'bicgstab'), mstyle = '-';
+if size(A,1) < 30000 % TODO...
+   mstyle = '--'; 
 else 
-    mstyle = '--'; 
+   mstyle = '-';
 end
 
 if precond == 0
