@@ -3,7 +3,7 @@ function test_MG
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
 
-m = 10; % # of RHSs
+m = 2; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
@@ -29,13 +29,12 @@ v = orth(v);
 Triplets = load("singularTrip.mat").SCell;
 Us = Triplets{1}; Ss = Triplets{2}; Vs = Triplets{3};
 
+r={};
 lb = {};
 index = 1;
 
 
-disp("Tests start...")
-f = figure;
-% =================== Schur ======================================
+% =================== For Schur ======================================
 p = coloring(dim,bs,1,1,zeros(size(dim)));
 [~, perm] = sort(p);
 Ap = A(perm, perm);  % Colored
@@ -48,6 +47,7 @@ a11 = A(p==1,p==1);
 assert(nnz(blkdiag(a00, bs)-a00) == 0) 
 inva11 = invblkdiag(a11,bs);
 % s = @(x) a00*x - a01*(inva11*(a10*x));
+disp("Explicitly Calculating ilu0(s)...")
 s = a00 - a01*(inva11*(a10));
 rhs0 = rhs(p==0,:) - a01*(inva11*rhs(p==1,:));
 
@@ -63,152 +63,180 @@ M_Schur_bj = @(x) bjs * x;
 
 SchurTrip = load("SchurSingularTrip.mat").SCell;
 USch = SchurTrip{1}; SSch = SchurTrip{2}; VSch = SchurTrip{3};
-
-
-
 %%
-test_mgd_singular(...
+disp("Tests start...")
+% ====================== S S ===============================
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
 lb{index} = "MinRes(S), unprec";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     1, M_smo_ilu0, 'min');
 lb{index} = "MinRes(S, defl)";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2, M_Schur_ilu0, 'min');
 lb{index} = "MinRes(S, ilu0(S))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_Schur_ilu0, 'min');
 lb{index} = "MinRes(S, defl(ilu0(S)))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     4, M_Schur_bj, 'min');
 lb{index} = "MinRes(S, bj(S))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5, M_Schur_bj, 'min');
 lb{index} = "MinRes(S, defl(bj(S)))";
 index = index + 1;
-%% ===========================================================
-test_mgd_singular(...
+lineSS = index;
+% ====================== S A00 ===============================
+p=coloring(dim,bs,1,1,zeros(size(dim)));
+[l,u]=ilu0_colors(A,p,bs);
+
+M_Schur_ilu0A = @(x)select_dom(solve_ilu(l,u,p,bs,expand_from_dom(x,p,0)),p,0);
+r{index} = test_mgd_singular( ...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2, M_Schur_ilu0A, 'min');
+
+lb{index} = "MinRes(S), ilu0(A00)";
+index = index + 1;
+lineSAoo = index;
+% ====================== A(2-color) ===============================
+r{index} = test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
 lb{index} = "MinRes(A(2-color)), unprec";
 index = index + 1;
 
-test_mgd_singular(...   
+r{index} = test_mgd_singular(...   
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     1, M_smo_ilu0, 'min');
 lb{index} = "MinRes(A(2-color), defl)";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2,  M_smo_ilu0, 'min');
 lb{index} = "MinRes(A(2-color), ilu0(A))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_smo_ilu0, 'min');
 lb{index} = "MinRes(A(2-color), defl(ilu0(A)))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5,  M_smo_bj, 'min');
 lb{index} = "MinRes(A(2-color), defl(bj(A)))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2,  M_Aperm_ilu0, 'min');
 lb{index} = "MinRes(A(2-color), ilu0(A(2-color)))";
 index = index + 1; 
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     Ap, rhsp, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5,  M_Aperm_ilu0, 'min');
 lb{index} = "MinRes(A(2-color), defl(ilu0(A(2-color))))";
 index = index + 1; 
-
-%% ===========================================================
-test_mgd_singular(...
+lineA2Color = index;
+% ====================== Regular ===============================
+r{index} = test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     0, M_smo_ilu0, 'min');
 lb{index} = "MinRes(A), unprec";
 index = index + 1;
 
-test_mgd_singular(...   
+r{index} = test_mgd_singular(...   
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     1, M_smo_ilu0, 'min');
 lb{index} = "MinRes(A, defl)";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     2,  M_smo_ilu0, 'min');
 lb{index} = "MinRes(A, ilu0(A))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     3, M_smo_ilu0, 'min');
 lb{index} = "MinRes(A, defl(ilu0(A)))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     4,  M_smo_bj, 'min');
 lb{index} = "MinRes(A, bj(A))";
 index = index + 1;
 
-test_mgd_singular(...
+r{index} = test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5,  M_smo_bj, 'min');
 lb{index} = "MinRes(A, defl(bj(A)))";
 index = index + 1;
+line = index;
 
+% PLOT
+f = figure;
+clf
+for i=1:numel(r)
+	if i < lineSS
+		semilogy(r{i}, '-', 'linewidth',2);
+	elseif i < lineSAoo
+		semilogy(r{i}, '--', 'linewidth',2);
+    elseif i < lineA2Color
+        semilogy(r{i}, '-o', 'linewidth',2);
+    elseif i < line
+		semilogy(r{i}, '-x', 'linewidth',2);
+	end
+	if i == 1, hold on; end
+end
 yline(tol_outer ,'r-.','DisplayName', sprintf('Tol'));
 
 grid on;
 legend(lb);
 % title(sprintf('Average of %d RHS (geom. mean)', m));
 
-% savefig(f, 'MG_test_avg.fig');
-% saveas(f, 'MG_test_avg.pdf');
+savefig(f, 'MG_avg_50.fig');
 end
 
 %%
@@ -249,7 +277,7 @@ function [u, s, v] = extractSTriplets(triplets, k)
     permV = V(:, perm);    v = permV(:, 1:k);
 end
 
-function test_mgd_singular(...
+function geo_mean = test_mgd_singular(...
     A, B, u, v, ...
     tol_inner, maxit_inner, ...
     tol_outer, maxit_outer, ...
@@ -297,25 +325,23 @@ end
     
 mean_log = mean(resvec_matrix, 2); %'omitnan'); 
 geo_mean = exp(mean_log);
-% Plot
-
-% if strcmpi(solver, 'bicgstab'), mstyle = '--';
-if size(A,1) < 30000 % TODO...
-   mstyle = '--'; 
-else 
-   mstyle = '-';
-end
-% if colorTest == 1, mstyle = '-'; end
-
-if precond == 0
-    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle); hold on;
-elseif precond == 1
-    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','o'); hold on;
-elseif precond == 2 || precond == 3
-    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','^'); hold on;
-elseif precond == 4 || precond == 5
-    semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','+'); hold on;
-end
+% 
+% if size(A,1) < 30000 % TODO...
+%    mstyle = '--'; 
+% else 
+%    mstyle = '-';
+% end
+% % if colorTest == 1, mstyle = '-'; end
+% 
+% if precond == 0
+%     semilogy(geo_mean, 'linewidth',2, 'Color', "r", 'LineStyle', mstyle); hold on;
+% elseif precond == 1
+%     semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','o'); hold on;
+% elseif precond == 2 || precond == 3
+%     semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','^'); hold on;
+% elseif precond == 4 || precond == 5
+%     semilogy(geo_mean, 'linewidth',2, 'LineStyle', mstyle, 'Marker','+'); hold on;
+% end
 
 end
 
@@ -387,17 +413,14 @@ end
 
 end
 
-function plotMGD(inner_iter_vec, resvec_outer, solver)
-    if nargin < 3 || isempty(solver) || strcmpi(solver, 'bicgstab')
-        m = "-";
-    else
-        m = "--";
-    end
-    resvec_outer = resvec_outer(2:end);
-    assert(size(inner_iter_vec,1) == size(resvec_outer,1), 'inner_iter_vec size must match resvec_outer(2:end)')
-    X = cumsum(inner_iter_vec);
-    semilogy(X, resvec_outer, LineStyle=m);
 
+function y = expand_from_dom(x, p, c)
+	y = zeros(numel(p),size(x,2));
+	y(p == c,:) = x;
+end
+
+function y = select_dom(x, p, c)
+	y = x(p==c,:);
 end
 
 % [sol_x, res_inner, inner_iter_vec, resvec_outer, total_iters] = MG_deflation(A, rhs, v, ...
