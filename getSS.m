@@ -1,4 +1,5 @@
 function getSS
+% get Singular TripLet
 A = load("A_level2.mat").A;
 bs = 64; dim=[4 4 4 8];
 p = coloring(dim,bs,1,1,zeros(size(dim)));
