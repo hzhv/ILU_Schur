@@ -28,8 +28,6 @@ function [precond, FL, FU, D] = unsymBlockFSAI(A, n_blocks)
         % % A(gL,gU) * f = -A(gU, idx)
         rhs_U = -A(g_U, curr_cols);   
         F_block_U = A_sub \ rhs_U;       
-        % mask_U = S(g_U, curr_cols);
-        % F_block_U(~mask_U) = 0;
         FU(g_U, curr_cols) = F_block_U;
         
         % % A(gU, gL)^T * fL = -r'  ==>  fL' * A(gU, gL) = -r  

@@ -27,8 +27,8 @@ elseif precond == 2  % M2 = ilu0
 elseif precond == 3  % deflation w/ ilu(0) smoother
     M2 = @(x) Ainvb_with_count(x, M_smo);
 elseif precond == 4  
-    M2 = M_smo;      % M2 = bj
-elseif precond == 5  % deflation w/ bj smoother
+    M2 = M_smo;      % M2 = other preconds
+elseif precond == 5  % deflation w/ other precond smoothers
     M2 = @(x) Ainvb_with_count(x, M_smo);
 end
 

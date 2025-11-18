@@ -3,7 +3,7 @@
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
 
-m = 2; % # of RHSs
+m = 100; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
@@ -59,6 +59,10 @@ bjs = invblkdiag(s, bs);
 assert(mod(size(s,1),bs)==0);
 M_Schur_bj = @(x) bjs * x;
 
+% ====================== UB-FSAI ===============================
+[ubf_A, FL, FU, D]   = unsymBlockFSAI(A, size(A,1)/bs);
+[ubf_S, FLD, FUD, ~] = unsymBlockFSAI(s, size(s,1)/bs);
+
 
 r={};
 lb = {};
@@ -87,68 +91,20 @@ r{index} = test_mgd_singular(...
 lb{index} = "MinRes(A(2-color)), unprec";
 lineUnprec = index;
 index = index + 1;
-
-% ilu(0)
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    2,  @(x) U\(L\x), 'min');
-lb{index} = "MinRes(A, ilu0(A))";
-index = index + 1;
-
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    2, M_Schur_ilu0, 'min');
-lb{index} = "MinRes(S, ilu0(S))";
-lineILU1 = index;
-index = index + 1;
-
-r{index} = test_mgd_singular(...
-    Ap, rhsp, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    2,  M_Aperm_ilu0, 'min');
-lb{index} = "MinRes(A(2-color), ilu0(A(2-color)))";
-lineILU2 = index;
-index = index + 1; 
-
-
-[l,u]=ilu0_colors(A,p,bs); % s, ilu0(A00)
-M_Schur_ilu0A = @(x)select_dom(solve_ilu(l,u,p,bs,expand_from_dom(x,p,0)),p,0);
-r{index} = test_mgd_singular( ...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    2, M_Schur_ilu0A, 'min');
-lb{index} = "MinRes(S, ilu0(A00)";
-lineILU3 = index;
-index = index + 1;
-
-%% defl
+%%
+% defl
 % ======================== DD ===============================
 domA_idx = partitioning(dim, bs, [1 1 2 2]);
 
 mask_even = (p==0);             % bs*prod(dims)
 domS_idx = domA_idx(mask_even); 
 dd = domdiag(s, domS_idx);
-% [~, permDD] = sort(domS_idx);
-% dd = dd(permDD, permDD);
-figure(1);spy(s(1:64:end, 1:64:end));
-hold on;figure(2);spy(dd(1:64:end, 1:64:end),'r')
-%%
 function z = dd_inv(dd, v, tol, maxit)
-    [z, flag, ~, iters] = bicgstab(dd, v, tol, maxit);
+    [z, flag, ~, iters] = minres(dd, v, tol, maxit);
     if flag == 0,fprintf('Solving dd*z = v with %g iters\n', iters); end
 end
 M_dd = @(v) dd_inv(dd, v, 0.1, 5); 
-% load("invdd.mat");
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, M_dd, 'min');
-lb{index} = "minRes(S, DD(S, [1 1 2 4]))";
-lineNoDefl = index;
-index = index + 1;
 
 r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
@@ -157,8 +113,8 @@ r{index} = test_mgd_singular(...
 lb{index} = "minRes(S, defl(DD(S, [1 1 2 4])))";
 lineDD = index;
 index = index + 1;
-
 %%
+%
 r{index} = test_mgd_singular(...   
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
@@ -197,6 +153,13 @@ lb{index} = "MinRes(A, defl(bj(A)))";
 index = index + 1;
 
 r{index} = test_mgd_singular(...
+    A, rhs, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5,  ubf_A, 'minres');
+lb{index} = "minres(A, defl(ubf(A)))";
+index = index + 1;
+
+r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5, M_Schur_bj, 'min');
@@ -216,8 +179,73 @@ r{index} = test_mgd_singular(...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     5,  M_Aperm_ilu0, 'min');
 lb{index} = "MinRes(A(2-color), defl(ilu0(A(2-color))))";
-lineDEFL4 = index;
+index = lineDEFL4;
 index = index + 1; 
+
+
+% No Defl
+% ilu(0)
+r{index} = test_mgd_singular(...
+    A, rhs, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2,  @(x) U\(L\x), 'min');
+lb{index} = "MinRes(A, ilu0(A))";
+index = index + 1;
+
+r{index} = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2, M_Schur_ilu0, 'min');
+lb{index} = "MinRes(S, ilu0(S))";
+index = index + 1;
+
+r{index} = test_mgd_singular(...
+    Ap, rhsp, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2,  M_Aperm_ilu0, 'min');
+lb{index} = "MinRes(A(2-color), ilu0(A(2-color)))";
+index = index + 1; 
+
+
+[l,u]=ilu0_colors(A,p,bs); % s, ilu0(A00)
+M_Schur_ilu0A = @(x)select_dom(solve_ilu(l,u,p,bs,expand_from_dom(x,p,0)),p,0);
+r{index} = test_mgd_singular( ...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2, M_Schur_ilu0A, 'min');
+lb{index} = "MinRes(S, ilu0(A00)";
+index = index + 1;
+%%
+% UBFSAI
+r{index} = test_mgd_singular(...
+    A, rhs, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    4, ubf_A, 'minres');
+lb{index} = "minres(A, ubf(A)";
+index = index + 1;
+
+r{index} = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    4, ubf_S, 'min');
+lb{index} = "MinRes(S, ubf(S))";
+index = index + 1;
+
+r{index} = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, ubf_S, 'min');
+lb{index} = "MinRes(S, defl(ubf(S)))";
+index = index + 1;
+
+%%
+% DD
+r{index} = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    4, M_dd, 'min');
+lb{index} = "minRes(S, DD(S, [1 1 2 4]))";
+index = index + 1;
 
 % bj
 r{index} = test_mgd_singular(...
@@ -232,17 +260,17 @@ r{index} = test_mgd_singular(...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
     4, M_Schur_bj, 'min');
 lb{index} = "MinRes(S, bj(S))";
+
 lineBJ = index;
-% index = index + 1;
+index = index + 1;
 
 %%
 % PLOT
-f = figure(2);
+f = figure;
 clf
 plotAutoStyle(r(1:lineUnprec),             'r'); 
-plotAutoStyle(r(lineUnprec+1:lineNoDefl),  'g');
-plotAutoStyle(r(lineNoDefl+1:lineDEFL4),   'b'); 
-plotAutoStyle(r(lineDEFL4+1:lineBJ),       'm'); 
+plotAutoStyle(r(lineUnprec+1:lineDEFL4),   'g');
+plotAutoStyle(r(lineDEFL4+1:lineBJ),       'b'); 
 % plotAutoStyle(r(lineILU2+1:lineILU3),   'c'); 
 % plotAutoStyle(r(lineILU3+1:lineDEFL1),  'm');
 % plotAutoStyle(r(lineDEFL1+1:lineDEFL2), [1 0.5 0]);     % orange
@@ -385,74 +413,6 @@ end
     
 mean_log = mean(resvec_matrix, 2); %'omitnan'); 
 geo_mean = exp(mean_log);
-end
-
-function test_mgd(...
-    A, B, v, ...
-    tol_inner, maxit_inner, ...
-    tol_outer, maxit_outer, ...
-    precond, M_smo, solver)
-
-m = size(B, 2);
-Xmax_each = zeros(m,1);         % gather total inner iteratons per rhs
-interp_ln_resvecs = cell(m,1);  % interp on 1:Xmax, gather'em all
-
-for j = 1:m
-        rhs = B(:, j);
-        [~, ~, inner_iter_vec, resvec_outer, ~] = MG_deflation( ...
-            A, rhs, v, ...
-            tol_inner, maxit_inner, ...
-            tol_outer, maxit_outer, ...
-            precond, M_smo, solver);
-    resvec_outer = resvec_outer/norm(rhs);
-
-    if precond == 0 || precond == 2 || precond == 4
-        X = (1:numel(resvec_outer)); 
-    else
-        X = [1; cumsum(inner_iter_vec(:))];
-    end
-    assert(numel(X) == numel(resvec_outer), ...
-        'inner_iter_vec size must match resvec_outer(2:end)');
-    [Xu, ia] = unique(X, 'stable');  % X_unique
-    resvec_outer = resvec_outer(ia);
-
-    Xq = (1:max(Xu));
-    ln_resvec_outer = log(resvec_outer);
-    ln_resvec_q = interp1(Xu, ln_resvec_outer, Xq, 'linear');
-    interp_ln_resvecs{j} = ln_resvec_q;
-    Xmax_each(j) = max(Xu);
-end
-% Truncation
-Lmin = floor(min(Xmax_each));
-resvec_matrix = NaN(Lmin, m); % construct convergence history for all rhs
-for j = 1:m
-    resvec_matrix(:, j) = interp_ln_resvecs{j}(1:Lmin);
-end
-if anynan(resvec_matrix)
-    fprintf("\n%s solover, precond=%g\n", solver, precond);
-    error("NaN in conv history");
-end
-    
-mean_log = mean(resvec_matrix, 2); %'omitnan'); 
-geo_mean = exp(mean_log);
-% Plot
-% if strcmpi(solver, 'bicgstab'), mstyle = '-';
-if size(A,1) < 30000 % TODO...
-   mstyle = '--'; 
-else 
-   mstyle = '-';
-end
-
-if precond == 0
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','o'); hold on;
-elseif precond == 1
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','.'); hold on;
-elseif precond == 2 || precond == 3
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle); hold on;
-elseif precond == 4 || precond == 5
-    semilogy(geo_mean, 'linewidth',1.5, 'LineStyle', mstyle, 'Marker','x'); hold on;
-end
-
 end
 
 
