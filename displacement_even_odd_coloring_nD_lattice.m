@@ -5,11 +5,11 @@
 % properly such that when you take half of the matrix, you take all
 % vertices being even/odd.
 
-function [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(D, k, p)
+function [Colors, nColors] = displacement_even_odd_coloring_nD_lattice(dim, k, p)
 % Input：
-%   D = []     % Array of lattice dimension sizes of length d
-%   k          % Coloring distance
-%   p = []     % Displacement array of length d
+%   dim = []     % Array of lattice dimension sizes of length d
+%   k            % Coloring distance
+%   p = []       % Displacement array of length d
 %
 % Output:
 %   Colors     % coloring results for each vertices

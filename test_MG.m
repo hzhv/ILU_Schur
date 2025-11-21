@@ -1,4 +1,4 @@
-function test_MG
+% function test_MG
 %% Noted these tests only for plotting, 200 eigs
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
@@ -60,8 +60,8 @@ assert(mod(size(s,1),bs)==0);
 M_Schur_bj = @(x) bjs * x;
 
 % ====================== UB-FSAI ===============================
-[ubf_A, FL, FU, D]   = unsymBlockFSAI(A, size(A,1)/bs);
-[ubf_S, FLD, FUD, ~] = unsymBlockFSAI(s, size(s,1)/bs);
+[ubf_A, FL, FU, D]    = unsymBlockFSAI(A, size(A,1)/bs);
+[ubf_S, FLs, FUs, Ds] = unsymBlockFSAI(s, size(s,1)/bs);
 
 
 r={};
@@ -251,6 +251,28 @@ index = index + 1;
 
 
 save('results.mat', 'r');
+
+%%
+ILU0S = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    2, M_Schur_ilu0, 'min');
+
+FLFU = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, @(x) FUs\(FLs \ x), 'min');
+
+FD = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, @(x) Ds * x, 'min');
+
+ 
+best = test_mgd_singular(...
+    s, rhs0, USch, VSch, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, ubf_S, 'min');
 %%
 % PLOT
 f = figure;
@@ -275,7 +297,7 @@ ylabel("relative residual norm");
 xlabel("Iterations");
 % xlabel("S takes 1 sync, ilu(S) takes 3 sync, ilu(perm(A)) 2 colors takes 2 syncs");
 savefig(f, 'MG_avg_ni.fig');
-end
+% end
 %%
 function plotAutoStyle(Y, color, sync_factor)
     if nargin < 3, sync_factor = 1; end;
@@ -337,64 +359,4 @@ function [u, s, v] = extractSTriplets(triplets, k)
     permU = U(:, perm);    u = permU(:, 1:k);
     permS = S(perm, perm); s = permS(1:k, 1:k);
     permV = V(:, perm);    v = permV(:, 1:k);
-end
-
-function geo_mean = test_mgd_singular(...
-    A, B, u, v, ...
-    tol_inner, maxit_inner, ...
-    tol_outer, maxit_outer, ...
-    precond, M_smo, solver)
-
-m = size(B, 2);
-Xmax_each = zeros(m,1);         % gather total inner iteratons per rhs
-interp_ln_resvecs = cell(m,1);  % interp on 1:Xmax, gather'em all
-
-for j = 1:m
-        rhs = B(:, j);
-        [~, ~, inner_iter_vec, resvec_outer, ~] = MG_deflation_Singular( ...
-            A, rhs, u, v, ...
-            tol_inner, maxit_inner, ...
-            tol_outer, maxit_outer, ...
-            precond, M_smo, solver);
-    resvec_outer = resvec_outer/norm(rhs);
-
-    if precond == 0 || precond == 2 || precond == 4
-        X = (1:numel(resvec_outer)); 
-    else
-        X = [1; cumsum(inner_iter_vec(:))];
-    end
-    assert(numel(X) == numel(resvec_outer), ...
-        'inner_iter_vec size must match resvec_outer(2:end)');
-    [Xu, ia] = unique(X, 'stable');  % X_unique
-    resvec_outer = resvec_outer(ia);
-
-    Xq = (1:max(Xu));
-    ln_resvec_outer = log(resvec_outer);
-    ln_resvec_q = interp1(Xu, ln_resvec_outer, Xq, 'linear');
-    interp_ln_resvecs{j} = ln_resvec_q;
-    Xmax_each(j) = max(Xu);
-end
-% Truncation
-Lmin = floor(min(Xmax_each));
-resvec_matrix = NaN(Lmin, m); % construct convergence history for all rhs
-for j = 1:m
-    resvec_matrix(:, j) = interp_ln_resvecs{j}(1:Lmin);
-end
-if anynan(resvec_matrix)
-    fprintf("\n%s solover, precond=%g\n", solver, precond);
-    error("NaN in conv history");
-end
-    
-mean_log = mean(resvec_matrix, 2); %'omitnan'); 
-geo_mean = exp(mean_log);
-end
-
-
-function y = expand_from_dom(x, p, c)
-	y = zeros(numel(p),size(x,2));
-	y(p == c,:) = x;
-end
-
-function y = select_dom(x, p, c)
-	y = x(p==c,:);
 end

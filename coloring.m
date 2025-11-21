@@ -31,11 +31,12 @@ end
 function b = neighbors(coor, step, dim)
 	assert(size(coor,2) == numel(dim))
 	n = numel(dim);
-	k = nnz(dim == 2) + nnz(dim > 2)*2;
+	k = nnz(dim == 2) + nnz(dim > 2)*2; % total # of nei
 	ncoor = size(coor,1);
 	b = zeros(k*ncoor, n);
 	j = 1;
 	for i=1:n
+        keyboard
 		if dim(i) >= 2*step
 			b(j:k:end,:) = coor;
 			b(j:k:end,i) = mod(b(j:k:end,i)+step, dim(i));

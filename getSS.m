@@ -1,9 +1,8 @@
-function getSS
-% get Singular TripLet
-A = load("A_level2.mat").A;
+function getSS(matrixFile, bs, dim)
+% get Singular TripLet for Schur Complement
+A = load(matrixFile).A;
 bs = 64; dim=[4 4 4 8];
 p = coloring(dim,bs,1,1,zeros(size(dim)));
-
 
 a00 = A(p==0,p==0);
 a01 = A(p==0,p==1);
