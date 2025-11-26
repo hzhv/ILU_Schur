@@ -27,13 +27,14 @@ p = coloring(dim,bs,1,1,zeros(size(dim)));
 [~, perm] = sort(p);
 Ap = A(perm, perm);  % Colored
 for i = 1:m, rhsp(:,i) = rhs(perm,i); end
-disp("Explicitly Calculating ilu0(2-color A)...")
-[Lp, Up] = ilu(Ap, struct('type','nofill'));
-M_Aperm_ilu0 = @(x) Up\(Lp\x);
+
+% disp("Explicitly Calculating ilu0(2-color A)...")
+% [Lp, Up] = ilu(Ap, struct('type','nofill'));
+% M_Aperm_ilu0 = @(x) Up\(Lp\x);
 
 [L, U] = ilu(A, struct('type','nofill'));
 M_smo_ilu0 = @(x) U\(L\x);
- 
+
 bj = invblkdiag(A, bs);
 M_smo_bj = @(x) bj * x;
 
@@ -51,9 +52,9 @@ inva11 = invblkdiag(a11,bs);
 s = a00 - a01*(inva11*(a10));
 rhs0 = rhs(p==0,:) - a01*(inva11*rhs(p==1,:));
 
-disp("Explicitly Calculating ilu0(s)...")
-[lSch, uSch] = ilu(s, struct('type','nofill'));
-M_Schur_ilu0 = @(x) uSch\(lSch\x);
+% disp("Explicitly Calculating ilu0(s)...")
+% [lSch, uSch] = ilu(s, struct('type','nofill'));
+% M_Schur_ilu0 = @(x) uSch\(lSch\x);
 
 bjs = invblkdiag(s, bs);
 assert(mod(size(s,1),bs)==0);
@@ -94,17 +95,21 @@ disp("Tests start...")
 %
 % defl
 % ======================== DD ===============================
-domA_idx = partitioning(dim, bs, [1 1 2 2]);
+domA_idx = partitioning(dim, bs, [1 1 2 4]);
 
 mask_even = (p==0);             % bs*prod(dims)
 domS_idx = domA_idx(mask_even); 
 dd = domdiag(s, domS_idx);
-function z = dd_inv(dd, v, tol, maxit)
-    [z, flag, ~, iters] = minres(dd, v, tol, maxit);
-    if flag == 0,fprintf('Solving dd*z = v with %g iters\n', iters); end
-end
+
 M_dd = @(v) dd_inv(dd, v, 0.1, 5); 
 % ===========================================================
+[~, perm_dom] = sort(domA_idx);
+[~, perm_doms] = sort(domS_idx);
+A_dd = A(perm_dom, perm_dom); s_dd = s(perm_doms, perm_doms);
+%%
+[ubf_denseA, FL_denseA, FU_denseA, ~] = unsymBlockFSAI(A_dd, prod([1 1 2 4]));
+
+%% ===========================================================
 r{index} = test_mgd_singular(...
     s, rhs0, USch, VSch, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...

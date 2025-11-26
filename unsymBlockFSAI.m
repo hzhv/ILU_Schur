@@ -40,27 +40,32 @@ function [precond, FL, FU, D] = unsymBlockFSAI(A, n_blocks)
     M_approx = FL * A * FU; 
     
     D = sparse(n, n);
+    D_inv_block = cell(n_blocks, 1);
     for kb = 1:n_blocks
         idx = limits(kb):(limits(kb+1)-1);
         Block = M_approx(idx, idx);
-        D(idx, idx) = inv(Block);
+        % D(idx, idx) = inv(Block);
+        [JL, JU] = ilu(Block, struct('type','nofill'));
+        D_inv_block{kb}.L = JL;
+        D_inv_block{kb}.U = JU;
     end
     
-    precond = @(r) FU * (D *(FL * r));
+    prcond = @(r) build(r, FL, FU, D_inv_block, limits, n_blocks);
+    % precond = FU * (inv(JL * JU) *(FL * r))
 end
 
-% function x = apply_solve(r, FL, FU, D_inv_ops, limits, n_blocks)
-%     z = FL * r;
+function x = build(r, FL, FU, D_inv_block, limits, n_blocks)
+    z = FL * r;
     
-%     % invert the bds (parallelizable)
-%     y = zeros(size(z));
-%     for kb = 1:n_blocks
-%         idx = limits(kb):(limits(kb+1)-1);
-%         % y(idx) = B_kb \ z(idx)
-%         ops = D_inv_ops{kb};
-%         block_rhs = ops.U \ (ops.L \ z(idx));
-%         y(idx) = block_rhs;
-%     end
+    % parallelizable
+    y = zeros(size(z));
+    for kb = 1:n_blocks
+        idx = limits(kb):(limits(kb+1)-1);
+        % y(idx) = D_kb \ z(idx)
+        ops = D_inv_block{kb};
+        block_rhs = ops.U \ (ops.L \ z(idx)); % 8 Blocks each 4096x4096
+        y(idx) = block_rhs;
+    end
     
-%     x = FU * y;
-% end
+    x = FU * y;
+end

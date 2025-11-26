@@ -36,7 +36,6 @@ function b = neighbors(coor, step, dim)
 	b = zeros(k*ncoor, n);
 	j = 1;
 	for i=1:n
-        keyboard
 		if dim(i) >= 2*step
 			b(j:k:end,:) = coor;
 			b(j:k:end,i) = mod(b(j:k:end,i)+step, dim(i));
