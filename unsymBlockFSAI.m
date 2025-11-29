@@ -1,4 +1,5 @@
 function [precond, FL, FU, D] = unsymBlockFSAI(A, n_blocks)
+% e.g. 8 domains
 % Input:
 %   n_blocks : # of blocks = np
 % Output:
@@ -40,32 +41,44 @@ function [precond, FL, FU, D] = unsymBlockFSAI(A, n_blocks)
     M_approx = FL * A * FU; 
     
     D = sparse(n, n);
-    D_inv_block = cell(n_blocks, 1);
+    % D_inv_block = cell(n_blocks, 1);
     for kb = 1:n_blocks
         idx = limits(kb):(limits(kb+1)-1);
         Block = M_approx(idx, idx);
-        % D(idx, idx) = inv(Block);
-        [JL, JU] = ilu(Block, struct('type','nofill'));
-        D_inv_block{kb}.L = JL;
-        D_inv_block{kb}.U = JU;
+        D(idx, idx) = Block; 
+        % [JL, JU] = ilu(Block, struct('type','nofill'));
+        % D_inv_block{kb}.L = JL;
+        % D_inv_block{kb}.U = JU;
     end
+
+    % FL * A * FU ~= D ~= JL * JU
+    % inv(JL) FL A FU inv(JU) ~= I
+
     
-    prcond = @(r) build(r, FL, FU, D_inv_block, limits, n_blocks);
+    % FU * inv(D) * FL
+    % FU * bicgstab(D, z, tol, maxit)
+    % JL * JU ~= D
     % precond = FU * (inv(JL * JU) *(FL * r))
+    precond =build(D, FL, FU);
 end
 
-function x = build(r, FL, FU, D_inv_block, limits, n_blocks)
-    z = FL * r;
-    
-    % parallelizable
-    y = zeros(size(z));
-    for kb = 1:n_blocks
-        idx = limits(kb):(limits(kb+1)-1);
-        % y(idx) = D_kb \ z(idx)
-        ops = D_inv_block{kb};
-        block_rhs = ops.U \ (ops.L \ z(idx)); % 8 Blocks each 4096x4096
-        y(idx) = block_rhs;
-    end
-    
-    x = FU * y;
+function precond = build(block, FL, FU)
+    precond = @(x) FU * bicgstab(block, FL*x, 0.1, 10);
 end
+
+% function x = build(r, FL, FU, D_inv_block, limits, n_blocks)
+%     % FU * D *(FL * r))
+%     z = FL * r;
+    
+%     % parallelizable
+%     y = zeros(size(z));
+%     for kb = 1:n_blocks
+%         idx = limits(kb):(limits(kb+1)-1);
+%         % y(idx) = D_kb \ z(idx)
+%         ops = D_inv_block{kb};
+%         block_rhs = ops.U \ (ops.L \ z(idx)); % 8 Blocks each 4096x4096
+%         y(idx) = block_rhs;
+%     end
+    
+%     x = FU * y;
+% end
