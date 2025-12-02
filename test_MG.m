@@ -94,7 +94,7 @@ disp("Tests start...")
 % index = index + 1;
 %
 % defl
-% ======================== DD ===============================
+%% ======================== DD ===============================
 domA_idx = partitioning(dim, bs, [1 1 2 4]);
 
 mask_even = (p==0);             % bs*prod(dims)
@@ -107,8 +107,16 @@ M_dd = @(v) dd_inv(dd, v, 0.1, 5);
 [~, perm_doms] = sort(domS_idx);
 A_dd = A(perm_dom, perm_dom); s_dd = s(perm_doms, perm_doms);
 rhs_dd = rhs(perm_dom, :); %
-%%
+%
 [ubf_denseA, FL_denseA, FU_denseA, ~] = unsymBlockFSAI(A_dd, prod([1 1 2 4]));
+%%
+r{index} = test_mgd_singular(...
+    A_dd, rhs_dd, Us, Vs, ...
+    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+    5, ubf_denseA, 'min');
+lb{index} = "minRes(A_dd, ubf(A_dd, [1 1 2 4]))";
+index = index + 1;
+
 
 %% ===========================================================
 r{index} = test_mgd_singular(...
