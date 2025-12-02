@@ -4,15 +4,13 @@
 % A = sprandn(100,100,0.01); A = A' * A + 1e-3 * speye(100);
 % condA = condest(A);
 
-clc;clear;
-A = load("A_level2.mat").A; condA = 2.2393e+04;
-[U,S,V] = getSingularTrip(A, 100, condA/0.1, 1000);
+% A = load("A_level2.mat").A; condA = 2.2393e+04;
+% [U,S,V] = getSingularTrip(A, 100, condA/0.1, 1000);
 %% 
 function [U,S,V] = getSingularTrip(A, k, tol, maxit)  
-
     [l, u] = ilu(A, struct('type','nofill'));
     % U'L' = A'
-    t =@(A,b) tfqmr(A, b, tol*tol*0.3, 1000); %, [], @(x) u\(l\x));
+    t =@(A,b) tfqmr(A,  b, tol*tol*0.3, 1000); %, [], @(x) u\(l\x));
     tp=@(A,b) tfqmr(A', b, tol*tol*0.3, 1000);%, [], @(x) l'\(u'\x));
 
     addpath('./primme/Matlab/');
