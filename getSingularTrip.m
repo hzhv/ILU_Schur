@@ -10,8 +10,8 @@
 function [U,S,V] = getSingularTrip(A, k, tol, maxit)  
     [l, u] = ilu(A, struct('type','nofill'));
     % U'L' = A'
-    t =@(A,b) tfqmr(A,  b, tol*tol*0.3, 1000); %, [], @(x) u\(l\x));
-    tp=@(A,b) tfqmr(A', b, tol*tol*0.3, 1000);%, [], @(x) l'\(u'\x));
+    t =@(A,b) tfqmr(A,  b, tol*tol*0.3, 1000, [], @(x) u\(l\x));
+    tp=@(A,b) tfqmr(A', b, tol*tol*0.3, 1000, [], @(x) l'\(u'\x));
 
     addpath('./primme/Matlab/');
     % [U,S,V] = svds(@svds_matvect, size(A), k, 'largest', ...                                                                          t(A, b), size(A), k, 'largest', ...
@@ -24,7 +24,7 @@ function [U,S,V] = getSingularTrip(A, k, tol, maxit)
     [U, S, V] = primme_svds(Afun, size(A,1), size(A,2), k, 'S', opts);
 
     SCell = {U, S, V};
-    save("singularTrip.mat", "SCell");
+    save("singularTripL2_Schur.mat", "SCell");
     
 
     function y = svds_matvect(x, flag, A)

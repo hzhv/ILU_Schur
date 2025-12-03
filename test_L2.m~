@@ -1,4 +1,4 @@
-% function test_MG
+function test_MG
 %% Noted these tests only for plotting, 200 eigs
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
