@@ -1,4 +1,4 @@
-function test_L2
+function test_L1
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
 
@@ -6,15 +6,15 @@ m = 10; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
-A = load('./A_l2.mat').A_l2; % Not Hermitian
+A = load('./A_l1.mat').A_l1; % Not Hermitian
 
 n = size(A, 1);   
-bs = 64; dim=[4 4 4 8];
+bs = 48; dim=[8 8 8 16];
 
 randn('state',3);
 rhs = randn(size(A,1),10);
 
-Triplets = load("singularTripL2.mat").SCell;
+Triplets = load("singularTripL1.mat").SCell;
 Us = Triplets{1}; Ss = Triplets{2}; Vs = Triplets{3};
 
 p = coloring(dim,bs,1,1,zeros(size(dim)));
@@ -36,7 +36,7 @@ bj = invblkdiag(A, bs);
 M_smo_bj = @(x) bj * x;
 
 % ====================== Schur ===============================
-SchurTrip = load("singularTripL2_Schur.mat").SCell;
+SchurTrip = load("singularTripL1_Schur.mat").SCell;
 USch = SchurTrip{1}; SSch = SchurTrip{2}; VSch = SchurTrip{3};
 
 a00 = A(p==0,p==0);
@@ -68,10 +68,10 @@ dd = domdiag(s, domS_idx);
 M_dd = @(v) dd_inv(dd, v, 0.1, 5);
 
 % ====================== UB-FSAI ===============================
-disp("Preparing FSAI...");
-[ubf_A, FL, FU, D]    = unsymBlockFSAI(A, size(A,1)/bs);
-[ubf_S, FLs, FUs, Ds] = unsymBlockFSAI(s, size(s,1)/bs);
-disp("Done.");
+% disp("Preparing FSAI...");
+% [ubf_A, FL, FU, D]    = unsymBlockFSAI(A, size(A,1)/bs);
+% [ubf_S, FLs, FUs, Ds] = unsymBlockFSAI(s, size(s,1)/bs);
+% disp("Done.");
 
 % 
 [~, perm_dom]  = sort(domA_idx);
@@ -232,62 +232,62 @@ index = index + 1;
 % index = index + 1;
 
 %======= UBFSAI ===================================================
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, ubf_A, 'minres');
-lb{index} = "minres(A, ubf(A))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     A, rhs, Us, Vs, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     4, ubf_A, 'minres');
+% lb{index} = "minres(A, ubf(A))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, ubf_S, 'min');
-lb{index} = "MinRes(S, ubf(S))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     s, rhs0, USch, VSch, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     4, ubf_S, 'min');
+% lb{index} = "MinRes(S, ubf(S))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5,  ubf_A, 'minres');
-lb{index} = "MinRes(A, defl(ubf(A)))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     A, rhs, Us, Vs, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     5,  ubf_A, 'minres');
+% lb{index} = "MinRes(A, defl(ubf(A)))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5, ubf_S, 'min');
-lb{index} = "MinRes(S, defl(ubf(S)))";
+% r{index} = test_mgd_singular(...
+%     s, rhs0, USch, VSch, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     5, ubf_S, 'min');
+% lb{index} = "MinRes(S, defl(ubf(S)))";
 lineUBF = index;
 index = index + 1;
 
 % bj
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4,  M_smo_bj, 'min');
-lb{index} = "MinRes(A, bj(A))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     A, rhs, Us, Vs, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     4,  M_smo_bj, 'min');
+% lb{index} = "MinRes(A, bj(A))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, M_Schur_bj, 'min');
-lb{index} = "MinRes(S, bj(S))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     s, rhs0, USch, VSch, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     4, M_Schur_bj, 'min');
+% lb{index} = "MinRes(S, bj(S))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5,  M_smo_bj, 'min');
-lb{index} = "MinRes(A, defl(bj(A)))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     A, rhs, Us, Vs, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     5,  M_smo_bj, 'min');
+% lb{index} = "MinRes(A, defl(bj(A)))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5, M_Schur_bj, 'min');
-lb{index} = "MinRes(S, defl(bj(S)))";
+% r{index} = test_mgd_singular(...
+%     s, rhs0, USch, VSch, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     5, M_Schur_bj, 'min');
+% lb{index} = "MinRes(S, defl(bj(S)))";
 lineBJ = index;
 index = index + 1;
 
@@ -296,6 +296,7 @@ save('results.mat', 'r');
 
 % PLOT
 f = figure;
+
 clf
 plotAutoStyle(r(1:lineDD),                 'r');
 plotAutoStyle(r(lineDD+1:lineDEFL),        'c');
@@ -316,7 +317,7 @@ legend(lb);
 ylabel("relative residual norm");
 xlabel("Iterations");
 % xlabel("S takes 1 sync, ilu(S) takes 3 sync, ilu(perm(A)) 2 colors takes 2 syncs");
-savefig(f, 'l2_iters.fig');
+savefig(f, 'l1_iters.fig');
 end
 
 
