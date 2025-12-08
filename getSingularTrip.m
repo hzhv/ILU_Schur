@@ -9,31 +9,42 @@
 %% 
 function [U,S,V] = getSingularTrip(A, k, tol, maxit)  
     % U'L' = A'
-    % [l, u] = ilu(A, struct('type','nofill'));
-    t =@(A,b) tfqmr(A,  b, tol*tol*0.3, 10000); % [], @(x) u\(l\x));
-    tp=@(A,b) tfqmr(A', b, tol*tol*0.3, 10000); % [], @(x) l'\(u'\x));
+    disp('Computing ILU preconditioner...');
+    [l, u] = ilu(A, struct('type','nofill'));
+    lt = l'; ut = u';
+    t =@(A,b) tfqmr(A,  b, tol*tol*0.3, 10000, [], @(x) u\(l\x));
+    tp=@(A,b) tfqmr(A', b, tol*tol*0.3, 10000, [], @(x) lt\(ut\x));
+    disp('Done.');
 
     addpath('./primme/Matlab/');
-    % [U,S,V] = svds(@svds_matvect, size(A), k, 'largest', ...                                                                          t(A, b), size(A), k, 'largest', ...
-    %      'Tolerance', tol, 'MaxIterations',maxit);
     opts = struct('tol', tol,'maxit',maxit, ...
         'reportLevel',2, 'method','primme_svds_normalequations', ...
         'primme',struct('method','DEFAULT_MIN_MATVECS'));
 
-    Afun = @(x, flag) svds_matvect(x, flag, A);
+    Afun = @(x, flag) svds_matvect(A, x, flag);
     [U, S, V] = primme_svds(Afun, size(A,1), size(A,2), k, 'L', opts);
 
     SCell = {U, S, V};
     save("singularTripL2.mat", "SCell");
     
 
-    function y = svds_matvect(x, flag, A)
+    function y = svds_matvect(A, x, flag)
+        y = zeros(size(x));
+        
         if nargin < 2 || strcmp(flag, "notransp")
-            y = t(A,x);
-            % y = A*x;
+            for i = 1:size(x, 2)
+                % y = A*x;
+                [y(:, i), flg, relres] = t(A,x(:, i));
+                if flg ~= 0, warning("tfqmr did not converged! Flag: %d, RelRes: %e", flg, relres); end
+            end
         else
-            y = tp(A',x);
-            % y = A'*x;
+            for i = 1:size(x, 2)
+                % y = A'*x;
+                [y(:, i), flg, relres] = tp(A,x(:, i));
+                if flg ~= 0, warning("tfqmr did not converged! Flag: %d, RelRes: %e", flg, relres); end        
+            end
         end
+
+        
     end
 end
