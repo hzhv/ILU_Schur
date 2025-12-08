@@ -10,11 +10,10 @@
 function [U,S,V] = getSingularTrip(A, k, tol, maxit)  
     % U'L' = A'
     disp('Computing ILU preconditioner...');
-    [l, u] = ilu(A, struct('type','nofill'));
+    [l, u] = ilu(A, struct('type','nofill')); disp('Done.');
     lt = l'; ut = u';
     t =@(A,b) tfqmr(A,  b, tol*tol*0.3, 10000, [], @(x) u\(l\x));
     tp=@(A,b) tfqmr(A', b, tol*tol*0.3, 10000, [], @(x) lt\(ut\x));
-    disp('Done.');
 
     addpath('./primme/Matlab/');
     opts = struct('tol', tol,'maxit',maxit, ...
@@ -25,7 +24,7 @@ function [U,S,V] = getSingularTrip(A, k, tol, maxit)
     [U, S, V] = primme_svds(Afun, size(A,1), size(A,2), k, 'L', opts);
 
     SCell = {U, S, V};
-    save("singularTripL2.mat", "SCell");
+    save("singularTripL1_Schur.mat", "SCell");
     
 
     function y = svds_matvect(A, x, flag)

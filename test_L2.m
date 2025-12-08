@@ -14,7 +14,7 @@ bs = 64; dim=[4 4 4 8];
 randn('state',3);
 rhs = randn(size(A,1),10);
 
-Triplets = load("singularTripL2.mat").SCell;
+Triplets = load("singularTripL2_ready.mat").SCell;
 Us = Triplets{1}; Ss = Triplets{2}; Vs = Triplets{3};
 
 p = coloring(dim,bs,1,1,zeros(size(dim)));
@@ -81,10 +81,12 @@ rhs_dd = rhs(perm_dom, :);
 rhs0_dd = rhs0(perm_doms, :);
 
 disp("Preparing Denser FSAI for A...");
-[ubf_denseA, FL_denseA, FU_denseA, ~] = unsymBlockFSAI(A_dd, prod([1 1 2 4]));
+tic;
+[ubf_denseA, FL_denseA, FU_denseA, ~] = unsymBlockFSAI(A_dd, prod([1 1 2 4]));toc
 
 disp("Preparing Denser FSAI for s...");
-[ubf_denseS, FL_denseS, FU_denseS, ~] = unsymBlockFSAI(s_dd, prod([1 1 2 4]));
+tic;
+[ubf_denseS, FL_denseS, FU_denseS, ~] = unsymBlockFSAI(s_dd, prod([1 1 2 4]));toc
 disp("Done.");
 
 
@@ -261,35 +263,35 @@ lb{index} = "MinRes(S, defl(ubf(S)))";
 lineUBF = index;
 index = index + 1;
 
-% bj
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4,  M_smo_bj, 'min');
-lb{index} = "MinRes(A, bj(A))";
-index = index + 1;
+% ===== bj ==================================================
+% r{index} = test_mgd_singular(...
+%     A, rhs, Us, Vs, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     4,  M_smo_bj, 'min');
+% lb{index} = "MinRes(A, bj(A))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    4, M_Schur_bj, 'min');
-lb{index} = "MinRes(S, bj(S))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     s, rhs0, USch, VSch, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     4, M_Schur_bj, 'min');
+% lb{index} = "MinRes(S, bj(S))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    A, rhs, Us, Vs, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5,  M_smo_bj, 'min');
-lb{index} = "MinRes(A, defl(bj(A)))";
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     A, rhs, Us, Vs, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     5,  M_smo_bj, 'min');
+% lb{index} = "MinRes(A, defl(bj(A)))";
+% index = index + 1;
 
-r{index} = test_mgd_singular(...
-    s, rhs0, USch, VSch, ...
-    tol_inner, maxit_inner, tol_outer, maxit_outer, ...
-    5, M_Schur_bj, 'min');
-lb{index} = "MinRes(S, defl(bj(S)))";
-lineBJ = index;
-index = index + 1;
+% r{index} = test_mgd_singular(...
+%     s, rhs0, USch, VSch, ...
+%     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
+%     5, M_Schur_bj, 'min');
+% lb{index} = "MinRes(S, defl(bj(S)))";
+% lineBJ = index;
+% index = index + 1;
 
 
 save('results.mat', 'r');
