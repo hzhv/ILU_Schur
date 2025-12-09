@@ -58,7 +58,7 @@ bjs = invblkdiag(s, bs);
 assert(mod(size(s,1),bs)==0);
 M_Schur_bj = @(x) bjs * x;
 
-%% ======================== DD ===============================
+% ======================== DD ===============================
 domA_idx = partitioning(dim, bs, [1 1 2 4]);
 ddA = domdiag(A, domA_idx);
 M_ddA = @(v) dd_inv(ddA, v, 0.1, 5);
@@ -179,7 +179,7 @@ lb{index} = "minRes(S, defl(ubf(S, [1 1 2 4])))";
 lineSdefl = index;
 index = index + 1;
 
-%% ============= A ==================================================
+% ============= A ==================================================
 r{index} = test_mgd_singular(...
     A, rhs, Us, Vs, ...
     tol_inner, maxit_inner, tol_outer, maxit_outer, ...
@@ -327,12 +327,16 @@ end
 
 function plotAutoStyle(Y, lineWidth, linestyle, marker)
     if nargin < 4, marker = "none"; end
+    colors = {'m', 'r', 'g', 'b', 'c'};
     % markers = {'<','d','v','>','^','p','h'};
     for i = 1:numel(Y)
+        c = colors{mod(i-1, numel(colors))+1};
         semilogy(Y{i}, ...
+             'Color', c, ...
              'Marker', marker, ...
              'LineStyle', linestyle, ...
-             'LineWidth', lineWidth);
+             'LineWidth', lineWidth, ...
+             'MarkerSize', 8);
         hold on;
     end
 end
