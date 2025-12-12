@@ -2,7 +2,7 @@ function test_L2
 % Outer Solver Options: bicgstab, min_res
 % inner Solver: GMRES
 
-m = 10; % # of RHSs
+m = 1; % # of RHSs
 tol_inner = 0.1; maxit_inner = 4;
 tol_outer = 1e-3; maxit_outer = 15;
 
@@ -14,7 +14,7 @@ bs = 64; dim=[4 4 4 8];
 randn('state',3);
 rhs = randn(size(A,1),10);
 
-Triplets = load("singularTripL2.mat").SCell;
+Triplets = load("singularTripL2_DD_Approx.mat").SCell;
 Us = Triplets{1}; Ss = Triplets{2}; Vs = Triplets{3};
 
 p = coloring(dim,bs,1,1,zeros(size(dim)));
@@ -36,7 +36,7 @@ bj = invblkdiag(A, bs);
 M_smo_bj = @(x) bj * x;
 
 % ====================== Schur ===============================
-SchurTrip = load("singularTripL2_Schur.mat").SCell;
+SchurTrip = load("singularTripL2_Schur_DD_Approx.mat").SCell;
 USch = SchurTrip{1}; SSch = SchurTrip{2}; VSch = SchurTrip{3};
 
 a00 = A(p==0,p==0);
@@ -45,7 +45,6 @@ a10 = A(p==1,p==0);
 a11 = A(p==1,p==1);
 assert(nnz(blkdiag(a00, bs)-a00) == 0) 
 inva11 = invblkdiag(a11,bs);
-% % s = @(x) a00*x - a01*(inva11*(a10*x));
 s = a00 - a01*(inva11*(a10));
 rhs0 = rhs(p==0,:) - a01*(inva11*rhs(p==1,:));
 

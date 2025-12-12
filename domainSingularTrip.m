@@ -1,11 +1,22 @@
-function domainSingularTrip(A, dims, bs, dom, k, tol, maxit)
-    disp('Partitioning domain...');
-    p = partitioning(dims, bs, dom);
-    A = domdiag(A, p);
+function [U, s_vals_all, V] = domainSingularTrip(A, A_dim, A_bs, dom, k, tol, maxit, Schur)
+    if  nargin < 8 || strcmp(Schur, "no"),
+        fprintf("Domain singular decompose on original matrix.\n\n")
+        p = partitioning(A_dim, A_bs, dom);
+        A = domdiag(A, p);        
+    else
+        fprintf("Explicitly getting Schur Complement...\n\n");
+        p = partitioning(A_dim, A_bs, dom);
+        s = getSchurComplement(A, A_dim, A_bs); disp("Done.");
+        color = coloring(A_dim, A_bs, 1, 1, zeros(size(A_dim)));
+        mask_even = (color==0);
+        p = p(mask_even);
+
+        A = domdiag(s, p);
+        fprintf("Schur Complement size: %g x %g", size(A,1), size(A,2));
+    end 
 
     unique_doms = unique(p);
-    num_doms = length(unique_doms);
-    
+    num_doms = length(unique_doms);    
     k_sub = ceil(k/num_doms);
 
     u_rows_cell = cell(num_doms, 1);
@@ -62,6 +73,6 @@ function domainSingularTrip(A, dims, bs, dom, k, tol, maxit)
     V = sparse(v_rows, v_cols, v_vals, size(A,2), global_col_offset);
 
     SCell = {U, s_vals_all, V};
-    save("singularTripL2_DD_Approx.mat", "SCell");
+    save("singularTripL2_Schur_DD_Approx.mat", "SCell");
     disp("Done.");
 end

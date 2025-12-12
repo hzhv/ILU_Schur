@@ -8,6 +8,8 @@
 % [U,S,V] = getSingularTrip(A, 100, condA/0.1, 1000);
 %% 
 function [U,S,V] = getSingularTrip(A, k, tol, maxit)  
+    % Notice that this script is currently getting the largest k  S.trips of A^{-1},
+    %  which equivalent to the smallest k  S.trips of A
     % U'L' = A'
     disp('Computing ILU preconditioner...');
     [l, u] = ilu(A, struct('type','nofill')); disp('Done.');
