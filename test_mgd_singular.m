@@ -10,7 +10,7 @@ function geo_mean = test_mgd_singular(...
     interp_ln_resvecs = cell(m,1);  % interp on 1:Xmax, gather'em all
 
     for j = 1:m
-        if j==1,
+        if j==1
             rhs = B(:, j);
         else % for no "real" RHS tests, run m times
             rhs = sol_x;
