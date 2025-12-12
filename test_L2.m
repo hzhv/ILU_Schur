@@ -311,8 +311,8 @@ save('results.mat', 'r');
 %% PLOT
 f = figure;
 clf
-plotAutoStyle(r(1:lineS),           2.5, '--');
-plotAutoStyle(r(lineS+1:lineSdefl), 2.5, '--', 'o');
+plotAutoStyle(r(1:lineS),           2.5, '-.');
+plotAutoStyle(r(lineS+1:lineSdefl), 2.5, '-.', 'o');
 plotAutoStyle(r(lineSdefl+1:lineA), 2.5, '-');
 plotAutoStyle(r(lineA+1:lineAdefl), 2.5, '-',  'x');
 
@@ -336,7 +336,7 @@ function plotAutoStyle(Y, lineWidth, linestyle, marker)
              'Marker', marker, ...
              'LineStyle', linestyle, ...
              'LineWidth', lineWidth, ...
-             'MarkerSize', 8);
+             'MarkerSize', 5);
         hold on;
     end
 end
