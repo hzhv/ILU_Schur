@@ -13,7 +13,8 @@ end
 res_inner = {};
 inner_iter_vec = [];
 
-inv_time = @(x) (v'*A*u) \ x;    % u is actually v of A
+vtAu = v'*A*u;
+inv_time = @(x) vtAu \ x;        % u is actually v of A
                                  % passed here is right s.vec of inv(A)
 P = @(x) A * (u*inv_time(v'*x));
 
