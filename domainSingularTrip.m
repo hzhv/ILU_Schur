@@ -12,7 +12,7 @@ function [U, s_vals_all, V] = domainSingularTrip(A, A_dim, A_bs, dom, k, tol, ma
         p = p(mask_even);
 
         A = domdiag(s, p);
-        fprintf("Schur Complement size: %g x %g", size(A,1), size(A,2));
+        fprintf("Schur Complement size: %g x %g\n", size(A,1), size(A,2));
     end 
 
     unique_doms = unique(p);
@@ -73,6 +73,6 @@ function [U, s_vals_all, V] = domainSingularTrip(A, A_dim, A_bs, dom, k, tol, ma
     V = sparse(v_rows, v_cols, v_vals, size(A,2), global_col_offset);
 
     SCell = {U, s_vals_all, V};
-    save("singularTripL2_Schur_DD_Approx.mat", "SCell");
+    save("singularTripL1_Schur_DD_Approx.mat", "SCell");
     disp("Done.");
 end
